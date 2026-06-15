@@ -68,7 +68,7 @@ sudo nano /etc/systemd/system/betting-app.service
 ```
 #### Bước 2.2: Dán nội dung cấu hình này vào (Lưu ý thay đổi đường dẫn /path/to/... cho đúng với thư mục thực tế trên server của bạn):
 ```
-Ini, TOML
+
 [Unit]
 Description=FastAPI Betting Application Engine
 After=network.target

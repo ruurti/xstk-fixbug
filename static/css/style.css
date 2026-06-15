@@ -1,0 +1,19 @@
+/* Tối ưu hiệu ứng cuộn mượt mà trên iOS */
+body {
+    -webkit-overflow-scrolling: touch;
+    background-color: #111827; /* Fallback màu nền */
+}
+
+/* Tùy chỉnh thanh cuộn nhỏ gọn trên mobile */
+::-webkit-scrollbar {
+    width: 4px;
+}
+::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 10px;
+}
+
+/* Loại bỏ highlight màu xanh mặc định khi bấm trên điện thoại */
+button, a, .clickable-card {
+    -webkit-tap-highlight-color: transparent;
+}
