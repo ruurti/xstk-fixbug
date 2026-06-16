@@ -2,6 +2,7 @@
 let currentUser = null;          // { email, total_points }
 let placedBets = new Set();      // match IDs đã cược trong session này
 let matchDetailCache = new Map();
+const NO_CACHE_FETCH_OPTIONS = { cache: "no-store" };
 
 // Bảng màu avatar — hash từ tên để màu ổn định
 const AVATAR_COLORS = [
@@ -100,6 +101,7 @@ function getQuoteByDetail(detail) {
 document.addEventListener("DOMContentLoaded", () => {
     fetchUserProfile();
     fetchUpcomingMatches();
+    fetchLatestFinishedMatch();
     startTicker();
     fetchLeaderboard();
     document.getElementById("match-detail-modal")?.addEventListener("click", e => {
@@ -110,6 +112,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     // Refresh pool odds mỗi 30 giây
     setInterval(fetchUpcomingMatches, 30_000);
+    setInterval(fetchLatestFinishedMatch, 30_000);
     // Refresh ticker mỗi 60 giây
     setInterval(startTicker, 60_000);
 });
@@ -119,7 +122,7 @@ document.addEventListener("DOMContentLoaded", () => {
 async function fetchUserProfile() {
     const el = document.getElementById("user-info");
     try {
-        const res = await fetch("/api/v1/me");
+        const res = await fetch("/api/v1/me", NO_CACHE_FETCH_OPTIONS);
         if (!res.ok) throw new Error();
         currentUser = await res.json();
         renderUserInfo();
@@ -159,7 +162,7 @@ async function fetchUpcomingMatches() {
     const listEl = document.getElementById("match-list");
     try {
         matchDetailCache.clear();
-        const res = await fetch("/api/v1/matches");
+        const res = await fetch("/api/v1/matches", NO_CACHE_FETCH_OPTIONS);
         const matches = await res.json();
 
         if (!matches.length) {
@@ -207,6 +210,24 @@ async function fetchUpcomingMatches() {
     } catch (e) {
         console.error(e);
         listEl.innerHTML = `<div class="text-center py-8 text-red-400 text-xs">Không thể tải danh sách trận đấu. Vui lòng thử lại sau!</div>`;
+    }
+}
+
+async function fetchLatestFinishedMatch() {
+    const el = document.getElementById("latest-finished-body");
+    if (!el) return;
+    try {
+        const res = await fetch("/api/v1/matches/latest-finished/detail", NO_CACHE_FETCH_OPTIONS);
+        if (res.status === 404) {
+            el.innerHTML = `<div class="rounded-xl border border-gray-700 bg-gray-900/70 p-4 text-sm text-gray-500">Chưa có trận nào hoàn tất gần nhất.</div>`;
+            return;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        el.innerHTML = renderLatestFinishedMatch(data);
+    } catch (e) {
+        console.error(e);
+        el.innerHTML = `<div class="rounded-xl border border-red-800 bg-red-950/40 p-4 text-sm text-red-200">Không tải được trận đã hoàn tất gần nhất.</div>`;
     }
 }
 
@@ -305,7 +326,7 @@ function renderMatchCard(match) {
 // ─── 4. Avatar Stack ──────────────────────────────────────────────────────────
 async function fetchAvatarStack(matchId) {
     try {
-        const res = await fetch(`/api/v1/matches/${matchId}/bets`);
+        const res = await fetch(`/api/v1/matches/${matchId}/bets`, NO_CACHE_FETCH_OPTIONS);
         if (!res.ok) return;
         const data = await res.json();
         ["HOME", "DRAW", "AWAY"].forEach(choice => {
@@ -358,6 +379,55 @@ function estimateReward(totalPool, choicePool, stake) {
     const bet = Math.max(0, Number(stake) || 0);
     if (bet <= 0) return 0;
     return Math.floor(((pool + bet) * bet) / (choice + bet));
+}
+
+function renderLatestFinishedMatch(detail) {
+    const match = detail.match || {};
+    const settlement = detail.settlement || {};
+    const pool = detail.pool || {};
+    const totalPool = Number(pool.total_pool || 0);
+    const winnerText = settlement.refunded
+        ? "Hoàn điểm"
+        : choiceLabel(settlement.winning_choice);
+    const scoreText = settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`;
+    const adjustedText = settlement.adjusted_score ? `Sau kèo ${settlement.adjusted_score}` : "Sau kèo --";
+    const winnerCount = Number(settlement.winner_count || 0);
+    const loserCount = Number(settlement.loser_count || 0);
+    const refundCount = Number(settlement.refund_count || 0);
+
+    return `
+        <div class="space-y-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="min-w-0">
+                    <div class="text-[11px] uppercase tracking-[0.18em] text-gray-500">Trận đã hoàn tất gần nhất</div>
+                    <div class="mt-1 text-lg font-black text-white truncate">${escapeHtml(match.home_team || "Trận đấu")} vs ${escapeHtml(match.away_team || "")}</div>
+                    <div class="mt-1 text-sm text-gray-400">${escapeHtml(scoreText)} · ${escapeHtml(adjustedText)} · ${formatVNDateTime(match.start_time)}</div>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                    <span class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${settlement.refunded ? "border-amber-800/80 bg-amber-950/50 text-amber-200" : "border-emerald-800/80 bg-emerald-950/40 text-emerald-200"}">
+                        ${escapeHtml(settlement.refunded ? "Hoàn điểm" : `Cửa thắng: ${winnerText}`)}
+                    </span>
+                    <button type="button" onclick="openMatchDetail(${match.id}, true)" class="inline-flex items-center gap-2 rounded-full border border-indigo-700 bg-indigo-950/50 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-900/60 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12H3m0 0l4-4m-4 4l4 4m18 0h-6"/>
+                        </svg>
+                        Chi tiết
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                ${summaryTile("Tổng quỹ", `${totalPool.toLocaleString()}đ`, "text-yellow-400")}
+                ${summaryTile("Người thắng", String(winnerCount), "text-emerald-300")}
+                ${summaryTile("Người thua", String(loserCount), "text-rose-300")}
+                ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(refundCount) : winnerText, "text-sky-300")}
+            </div>
+
+            <div class="rounded-xl border border-amber-900/50 bg-amber-950/20 p-4">
+                <div class="text-[11px] uppercase tracking-wide text-amber-300/80">Khịa nhanh</div>
+                <div class="mt-2 text-sm leading-relaxed text-amber-50 italic">${escapeHtml(settlement.headline_quote || getQuoteByDetail(detail))}</div>
+            </div>
+        </div>`;
 }
 
 
@@ -477,7 +547,7 @@ window.confirmBet = async function(matchId) {
 
 
 // ─── 9. Toggle Accordion ─────────────────────────────────────────────────────
-window.openMatchDetail = async function(matchId) {
+window.openMatchDetail = async function(matchId, forceFresh = false) {
     const modal = document.getElementById("match-detail-modal");
     const body = document.getElementById("match-detail-body");
     if (!modal || !body) return;
@@ -490,8 +560,8 @@ window.openMatchDetail = async function(matchId) {
         </div>`;
 
     try {
-        const cached = matchDetailCache.get(matchId);
-        const response = cached ? null : await fetch(`/api/v1/matches/${matchId}/detail`);
+        const cached = forceFresh ? null : matchDetailCache.get(matchId);
+        const response = cached ? null : await fetch(`/api/v1/matches/${matchId}/detail`, NO_CACHE_FETCH_OPTIONS);
         if (response && !response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
@@ -522,6 +592,7 @@ function renderMatchDetail(detail) {
 
     const match = detail.match || {};
     const pool = detail.pool || {};
+    const settlement = detail.settlement || {};
     const bettors = detail.bettors || {};
     const myBet = detail.my_bet;
     const totalPool = Number(pool.total_pool || 0);
@@ -532,8 +603,10 @@ function renderMatchDetail(detail) {
     ];
 
     titleEl.textContent = `${match.home_team} vs ${match.away_team}`;
-    subtitleEl.textContent = `Kèo chấp ${match.handicap ?? 0} | Bắt đầu ${formatVNDateTime(match.start_time)} | Trạng thái ${match.status}`;
-    quoteEl.textContent = getQuoteByDetail(detail);
+    subtitleEl.textContent = settlement.is_finished
+        ? `Kèo chấp ${match.handicap ?? 0} | Tỷ số ${settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`} | Sau kèo ${settlement.adjusted_score || "--"}`
+        : `Kèo chấp ${match.handicap ?? 0} | Bắt đầu ${formatVNDateTime(match.start_time)} | Trạng thái ${match.status}`;
+    quoteEl.textContent = settlement.headline_quote || getQuoteByDetail(detail);
 
     const homePct = totalPool > 0 ? (choiceStats[0].stake / totalPool) * 100 : 0;
     const drawPct = totalPool > 0 ? (choiceStats[1].stake / totalPool) * 100 : 0;
@@ -547,10 +620,19 @@ function renderMatchDetail(detail) {
             ${summaryTile("Khách", `${choiceStats[2].stake.toLocaleString()}đ`, "text-pink-300")}
         </div>
 
+        ${settlement.is_finished ? `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                ${summaryTile("Kết quả", settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`, "text-white")}
+                ${summaryTile("Sau kèo", settlement.adjusted_score || "--", "text-indigo-300")}
+                ${summaryTile("Người thắng", String(Number(settlement.winner_count || 0)), "text-emerald-300")}
+                ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(Number(settlement.refund_count || 0)) : choiceLabel(settlement.winning_choice), "text-sky-300")}
+            </div>
+        ` : ""}
+
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            ${renderChoiceColumn(choiceStats[0], homePct)}
-            ${renderChoiceColumn(choiceStats[1], drawPct)}
-            ${renderChoiceColumn(choiceStats[2], awayPct)}
+            ${renderChoiceColumn(choiceStats[0], homePct, settlement)}
+            ${renderChoiceColumn(choiceStats[1], drawPct, settlement)}
+            ${renderChoiceColumn(choiceStats[2], awayPct, settlement)}
         </div>
 
         <div class="rounded-xl border border-gray-700 bg-gray-900/70 p-4">
@@ -562,9 +644,10 @@ function renderMatchDetail(detail) {
                 <div class="text-right">
                     <div class="text-xs text-gray-500">Điểm đã vào</div>
                     <div class="text-lg font-black text-yellow-400">${myBet ? `${Number(myBet.stake).toLocaleString()}đ` : "0đ"}</div>
+                    ${myBet ? `<div class="text-[11px] text-gray-400">${escapeHtml(myBet.reward_label || myBet.outcome_label || "")}</div>` : ""}
                 </div>
             </div>
-            ${myBet ? `<div class="text-xs text-gray-400">Vào đúng cửa thì uống trà, vào lệch cửa thì ngồi ngẫm đời.</div>` : `<div class="text-xs text-gray-400">Chưa đặt cược vẫn xem được quỹ và danh sách để cân nhắc cửa vào.</div>`}
+            ${myBet ? `<div class="text-xs text-gray-400">${escapeHtml(myBet.quote || "Vào đúng cửa thì uống trà, vào lệch cửa thì ngồi ngẫm đời.")}</div>` : `<div class="text-xs text-gray-400">Chưa đặt cược vẫn xem được quỹ và danh sách để cân nhắc cửa vào.</div>`}
         </div>
     `;
 }
@@ -577,8 +660,9 @@ function summaryTile(label, value, valueClass) {
         </div>`;
 }
 
-function renderChoiceColumn(choiceStat, pct) {
+function renderChoiceColumn(choiceStat, pct, settlement) {
     const list = choiceStat.bettors || [];
+    const state = getChoiceState(choiceStat.key, settlement);
     return `
         <section class="rounded-xl border border-gray-700 bg-gray-900/80 p-4 flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2">
@@ -587,6 +671,7 @@ function renderChoiceColumn(choiceStat, pct) {
                     <div class="text-sm font-semibold text-white">${choiceStat.count} người</div>
                 </div>
                 <div class="text-right">
+                    <div class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${state.badgeClass}">${escapeHtml(state.label)}</div>
                     <div class="text-xs text-gray-500">Tỷ trọng</div>
                     <div class="text-sm font-black text-emerald-300">${pct.toFixed(1)}%</div>
                 </div>
@@ -601,6 +686,31 @@ function renderChoiceColumn(choiceStat, pct) {
                 ${renderBettorList(list)}
             </div>
         </section>`;
+}
+
+function getChoiceState(choiceKey, settlement) {
+    if (!settlement?.is_finished) {
+        return {
+            label: "Chờ",
+            badgeClass: "border-gray-700 bg-gray-800/90 text-gray-300",
+        };
+    }
+    if (settlement.refunded) {
+        return {
+            label: "Hoàn điểm",
+            badgeClass: "border-amber-800/80 bg-amber-950/60 text-amber-200",
+        };
+    }
+    if (settlement.winning_choice === choiceKey) {
+        return {
+            label: "Cửa thắng",
+            badgeClass: "border-emerald-800/80 bg-emerald-950/60 text-emerald-200",
+        };
+    }
+    return {
+        label: "Cửa thua",
+        badgeClass: "border-rose-800/80 bg-rose-950/60 text-rose-200",
+    };
 }
 
 function choiceBarClass(choice) {
@@ -626,19 +736,38 @@ function renderBettorList(list) {
         const wolfBadge = bettor.is_lone_wolf
             ? `<span class="ml-auto text-[10px] font-bold text-amber-400">khác biệt</span>`
             : "";
+        const outcomeClass = getOutcomeBadgeClass(bettor.outcome);
+        const rewardText = escapeHtml(bettor.reward_label || "");
+        const quote = bettor.quote ? `<div class="mt-1 text-[11px] leading-snug italic text-gray-400">${escapeHtml(bettor.quote)}</div>` : "";
         return `
-            <div class="flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-950/60 px-3 py-2" title="${title}">
+            <div class="flex items-start gap-2 rounded-lg border border-gray-800 bg-gray-950/60 px-3 py-2" title="${title}">
                 <div class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black text-white flex-shrink-0" style="background:${bg}">
                     ${escapeHtml(bettor.initials || "??")}
                 </div>
                 <div class="min-w-0 flex-1">
-                    <div class="text-sm font-semibold text-white truncate">${escapeHtml(bettor.name)}</div>
+                    <div class="flex items-center gap-2 min-w-0">
+                        <div class="text-sm font-semibold text-white truncate">${escapeHtml(bettor.name)}</div>
+                        <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${outcomeClass}">${escapeHtml(bettor.outcome_label || "Chờ kết quả")}</span>
+                    </div>
                     <div class="text-[11px] text-gray-500">${formatVNDateTime(bettor.created_at)}</div>
+                    ${quote}
                 </div>
-                <div class="text-sm font-black text-yellow-400">${Number(bettor.stake).toLocaleString()}đ</div>
+                <div class="text-right shrink-0">
+                    <div class="text-sm font-black text-yellow-400">${Number(bettor.stake).toLocaleString()}đ</div>
+                    <div class="text-[11px] text-gray-400">${rewardText}</div>
+                </div>
                 ${wolfBadge}
             </div>`;
     }).join("");
+}
+
+function getOutcomeBadgeClass(outcome) {
+    return {
+        WIN: "border-emerald-800/80 bg-emerald-950/60 text-emerald-200",
+        LOSE: "border-rose-800/80 bg-rose-950/60 text-rose-200",
+        REFUND: "border-amber-800/80 bg-amber-950/60 text-amber-200",
+        PENDING: "border-gray-700 bg-gray-800/90 text-gray-300",
+    }[outcome] || "border-gray-700 bg-gray-800/90 text-gray-300";
 }
 
 window.toggleGroup = function(dateKey) {
@@ -654,7 +783,7 @@ async function startTicker() {
     const wrap = document.getElementById("ticker-content");
     if (!wrap) return;
     try {
-        const res = await fetch("/api/v1/activity-feed");
+        const res = await fetch("/api/v1/activity-feed", NO_CACHE_FETCH_OPTIONS);
         if (!res.ok) return;
         const activities = await res.json();
         if (!activities.length) return;
@@ -681,7 +810,7 @@ async function fetchLeaderboard() {
     const el = document.getElementById("leaderboard-body");
     if (!el) return;
     try {
-        const res = await fetch("/api/v1/leaderboard");
+        const res = await fetch("/api/v1/leaderboard", NO_CACHE_FETCH_OPTIONS);
         if (!res.ok) return;
         const data = await res.json();
         renderLeaderboard(data, el);

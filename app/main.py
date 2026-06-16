@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 import logging
+import hashlib
 import random
 import uuid as uuid_lib
 from pathlib import Path
@@ -43,6 +44,14 @@ NO_CACHE_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0",
     "Surrogate-Control": "no-store",
+}
+
+CHOICE_LABELS = {"HOME": "Chủ nhà", "DRAW": "Hòa", "AWAY": "Khách"}
+OUTCOME_LABELS = {
+    "WIN": "Thắng",
+    "LOSE": "Chưa tài đâu",
+    "REFUND": "Hoàn điểm",
+    "PENDING": "Chờ kết quả",
 }
 
 
@@ -462,8 +471,8 @@ async def get_match_bets(match_id: int, db: AsyncSession = Depends(get_db)):
         choice_counts[r.Bet.choice] = choice_counts.get(r.Bet.choice, 0) + 1
 
     for r in rows:
-        name = r.User.email.split("@")[0]
-        initials = (name[:2]).upper()
+        name = _user_display_name(r.User)
+        initials = _user_initials(r.User)
         # Lone wolf: chỉ có 1 người đặt cửa này, trong khi cửa khác có nhiều hơn
         my_count = choice_counts.get(r.Bet.choice, 0)
         other_max = max(v for k, v in choice_counts.items() if k != r.Bet.choice)
@@ -492,65 +501,26 @@ async def get_match_detail(
     )).scalars().first()
     if not match:
         raise HTTPException(status_code=404, detail="Trận đấu không tồn tại.")
+    return await _build_match_detail_payload(match=match, user=user, db=db)
 
-    query = (
-        select(Bet, User)
-        .join(User, Bet.user_id == User.id)
-        .where(Bet.match_id == match_id)
-        .order_by(Bet.created_at.asc())
-    )
-    rows = (await db.execute(query)).all()
 
-    summary = {
-        "HOME": {"stake": 0, "count": 0},
-        "DRAW": {"stake": 0, "count": 0},
-        "AWAY": {"stake": 0, "count": 0},
-    }
-    bettors = {"HOME": [], "DRAW": [], "AWAY": []}
+@app.get("/api/v1/matches/latest-finished/detail")
+async def get_latest_finished_match_detail(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    match = (
+        await db.execute(
+            select(Match)
+            .where(Match.status == MatchStatus.finished)
+            .order_by(desc(Match.start_time), desc(Match.id))
+            .limit(1)
+        )
+    ).scalars().first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Chưa có trận nào hoàn tất.")
 
-    for row in rows:
-        choice = row.Bet.choice
-        summary[choice]["stake"] += row.Bet.stake
-        summary[choice]["count"] += 1
-
-    for row in rows:
-        name = row.User.email.split("@")[0]
-        initials = (name[:2]).upper()
-        my_count = summary[row.Bet.choice]["count"]
-        other_max = max(summary[ch]["count"] for ch in summary if ch != row.Bet.choice)
-        is_lone_wolf = my_count == 1 and other_max >= 3
-
-        bettors[row.Bet.choice].append({
-            "name": name,
-            "initials": initials,
-            "stake": row.Bet.stake,
-            "created_at": row.Bet.created_at.isoformat(),
-            "is_lone_wolf": is_lone_wolf,
-        })
-
-    my_bet = (await db.execute(
-        select(Bet).where(Bet.match_id == match_id, Bet.user_id == user.id)
-    )).scalars().first()
-
-    return {
-        "match": _match_response(match),
-        "pool": {
-            "total_pool": sum(summary[ch]["stake"] for ch in summary),
-            "home_stakes": summary["HOME"]["stake"],
-            "draw_stakes": summary["DRAW"]["stake"],
-            "away_stakes": summary["AWAY"]["stake"],
-            "home_count": summary["HOME"]["count"],
-            "draw_count": summary["DRAW"]["count"],
-            "away_count": summary["AWAY"]["count"],
-        },
-        "bettors": bettors,
-        "my_bet": None if not my_bet else {
-            "choice": my_bet.choice,
-            "stake": my_bet.stake,
-            "points_earned": my_bet.points_earned,
-            "created_at": my_bet.created_at.isoformat(),
-        },
-    }
+    return await _build_match_detail_payload(match=match, user=user, db=db)
 
 
 # ─── GET /api/v1/leaderboard — Bảng Phong Thần ───────────────────────────────
@@ -662,7 +632,7 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)):
 
         leaderboard.append({
             "rank": rank,
-            "name": user.email.split("@")[0],
+            "name": _user_display_name(user),
             "total_points": user.total_points,
             "trend": trend,
             "earned_24h": earned_24h,
@@ -694,13 +664,15 @@ async def get_activity_feed(db: AsyncSession = Depends(get_db)):
         "😤 {name} quyết tâm với {team} — {stake} điểm",
         "🃏 {name} bài ngửa {stake} điểm vào {team}",
         "💰 {name} cược đậm {stake} điểm vào {team}",
+        "💪 {name} vô {stake} điểm vào {team}, liệu có nhổ được xe?",
+        "👍 {name} xuống xác {stake} điểm vào {team}"
     ]
 
     CHOICE_LABELS = {"HOME": "Chủ nhà", "DRAW": "Hòa", "AWAY": "Khách"}
 
     activities = []
     for r in rows:
-        name = r.User.email.split("@")[0]
+        name = _user_display_name(r.User)
         team = (
             r.Match.home_team if r.Bet.choice == "HOME"
             else r.Match.away_team if r.Bet.choice == "AWAY"
@@ -732,6 +704,278 @@ def _match_response(match: Match):
         "handicap": match.handicap,
         "status": match.status,
         "start_time": match.start_time.isoformat(),
+    }
+
+
+def _choice_label(choice: Optional[str]) -> str:
+    return CHOICE_LABELS.get(choice or "", choice or "Không rõ")
+
+
+def _user_display_name(user: User) -> str:
+    return user.display_name or user.email.split("@")[0]
+
+
+def _user_initials(user: User) -> str:
+    return _user_display_name(user)[:2].upper()
+
+
+def _stable_pick(options, seed: str) -> str:
+    if not options:
+        return ""
+    digest = hashlib.md5(seed.encode("utf-8")).hexdigest()
+    return options[int(digest, 16) % len(options)]
+
+
+def _format_reward_label(outcome: str, stake: int, points_earned: Optional[int]) -> str:
+    if outcome == "WIN":
+        return f"+{int(points_earned or 0):,}đ"
+    if outcome == "LOSE":
+        return "0đ"
+    if outcome == "REFUND":
+        return f"Hoàn {int(stake):,}đ"
+    return "Chờ kết quả"
+
+
+def _build_detail_quote(
+    *,
+    match: Match,
+    choice: str,
+    outcome: str,
+    stake: int,
+    points_earned: Optional[int],
+    winning_choice: Optional[str],
+    name: str,
+) -> str:
+    choice_text = _choice_label(choice)
+    winner_text = _choice_label(winning_choice)
+    quote_bank = {
+        "WIN": [
+            "{name} ôm đúng cửa {choice}. Hôm nay bảng điểm phải tự chỉnh lại thái độ.",
+            "{name} chọn {choice} chuẩn như xem trước kết quả. Đám đông xin phép học theo.",
+            "{name} vào kèo {choice} rất gọn. Trận này trực giác đã thắng tranh cãi.",
+        ],
+        "LOSE": [
+            "{name} chọn {choice} khá tự tin, nhưng kết quả lại trả lời theo kiểu rất thẳng.",
+            "{name} vừa trải nghiệm một pha kèo không chiều lòng niềm tin.",
+            "{name} đi cửa {choice} hơi sớm một nhịp. Hôm nay trực giác xin nghỉ phép.",
+        ],
+        "REFUND": [
+            "{name} gặp kèo hoàn điểm. Ít ra ví vẫn nguyên, tinh thần cũng đỡ đau.",
+            "{name} đi một vòng rồi quay lại vạch xuất phát. Trận này công bằng đến mức hơi buồn cười.",
+            "{name} không mất điểm nhưng cũng chưa kịp trêu ai. Kèo này đúng kiểu hòa cho tất cả.",
+        ],
+        "PENDING": [
+            "{name} đang chờ kèo nổ. Cửa {choice} mà lên tiếng thì câu chuyện sẽ vui hơn nhiều.",
+            "{name} đã vào cửa {choice}, giờ chỉ còn chờ bảng điểm quyết định phần hài hước.",
+            "{name} chọn {choice}, còn trận đấu thì giữ kịch tính khá lâu.",
+        ],
+    }
+    seed = f"{match.id}:{name}:{choice}:{outcome}:{stake}:{points_earned or 0}:{winning_choice or ''}"
+    template = _stable_pick(quote_bank.get(outcome, quote_bank["PENDING"]), seed)
+    return template.format(name=name, choice=choice_text, winner=winner_text, stake=stake)
+
+
+def _build_headline_quote(
+    *,
+    match: Match,
+    settlement: dict,
+    summary: dict,
+) -> str:
+    if settlement["is_finished"]:
+        if settlement["refunded"]:
+            return _stable_pick(
+                [
+                    "Kèo này hoàn điểm, nên ai cũng rời bàn với vẻ mặt khá lịch sự.",
+                    "Trận đã xong nhưng không cửa nào đủ lực để giữ lại màn khịa dài lâu.",
+                    "Không ai ăn đủ, thế là cuộc vui tạm dừng trong thế cân bằng hơi buồn cười.",
+                ],
+                f"{match.id}:refund",
+            )
+
+        winner_choice = settlement["winning_choice"] or "HOME"
+        winner_text = _choice_label(winner_choice)
+        return _stable_pick(
+            [
+                "{winner} đã lên tiếng. Người ôm đúng cửa hôm nay nói ít nhưng cười nhiều.",
+                "Kết quả ngả về {winner}. Bên kia chỉ còn cách tự an ủi bằng kinh nghiệm.",
+                "{winner} thắng trận này, và đám đông vừa học thêm một bài về niềm tin.",
+            ],
+            f"{match.id}:{winner_choice}",
+        ).format(
+            winner=winner_text,
+            home=match.home_team,
+            away=match.away_team,
+            score=f"{match.home_score}-{match.away_score}",
+        )
+
+    dominant_choice = sorted(
+        summary.items(),
+        key=lambda item: (-item[1]["stake"], -item[1]["count"], item[0]),
+    )[0][0]
+    dominant_text = _choice_label(dominant_choice)
+    return _stable_pick(
+        [
+            "Cửa {choice} đang đông khách nhất. Đám đông đang chờ xem ai sẽ cười sau cùng.",
+            "Quỹ đang nghiêng về {choice}. Trận này nhìn là biết sẽ còn nhiều lời ra tiếng vào.",
+            "{choice} đang được chú ý nhất, nhưng bảng điểm thì vẫn thích tạo bất ngờ.",
+        ],
+        f"{match.id}:pending:{dominant_choice}",
+    ).format(
+        choice=dominant_text,
+        home=match.home_team,
+        away=match.away_team,
+    )
+
+
+async def _build_match_detail_payload(
+    *,
+    match: Match,
+    user: User,
+    db: AsyncSession,
+):
+    query = (
+        select(Bet, User)
+        .join(User, Bet.user_id == User.id)
+        .where(Bet.match_id == match.id)
+        .order_by(Bet.created_at.asc())
+    )
+    rows = (await db.execute(query)).all()
+
+    summary = {
+        "HOME": {"stake": 0, "count": 0},
+        "DRAW": {"stake": 0, "count": 0},
+        "AWAY": {"stake": 0, "count": 0},
+    }
+    bettors = {"HOME": [], "DRAW": [], "AWAY": []}
+
+    for row in rows:
+        choice = row.Bet.choice
+        summary[choice]["stake"] += row.Bet.stake
+        summary[choice]["count"] += 1
+
+    is_finished = match.status == MatchStatus.finished
+    adjusted_home = match.home_score + match.handicap
+    adjusted_away = match.away_score
+    if adjusted_home > adjusted_away:
+        winning_choice = "HOME"
+    elif adjusted_home < adjusted_away:
+        winning_choice = "AWAY"
+    else:
+        winning_choice = "DRAW"
+
+    total_pool = sum(summary[ch]["stake"] for ch in summary)
+    stakes_on_winner = summary[winning_choice]["stake"]
+    has_bets = bool(rows)
+    refunded = is_finished and has_bets and (stakes_on_winner == 0)
+
+    settlement = {
+        "is_finished": is_finished,
+        "winning_choice": winning_choice if is_finished else None,
+        "winning_choice_label": _choice_label(winning_choice) if is_finished else None,
+        "adjusted_home_score": adjusted_home if is_finished else None,
+        "adjusted_away_score": adjusted_away if is_finished else None,
+        "adjusted_score": f"{adjusted_home}-{adjusted_away}" if is_finished else None,
+        "score": f"{match.home_score}-{match.away_score}" if is_finished else None,
+        "refunded": refunded,
+        "winner_count": 0,
+        "loser_count": 0,
+        "refund_count": 0,
+        "headline_quote": None,
+    }
+
+    for row in rows:
+        if not is_finished:
+            outcome = "PENDING"
+        elif refunded:
+            outcome = "REFUND"
+        elif row.Bet.choice == winning_choice:
+            outcome = "WIN"
+        else:
+            outcome = "LOSE"
+
+        if outcome == "WIN":
+            settlement["winner_count"] += 1
+        elif outcome == "LOSE":
+            settlement["loser_count"] += 1
+        elif outcome == "REFUND":
+            settlement["refund_count"] += 1
+
+        name = _user_display_name(row.User)
+        initials = _user_initials(row.User)
+        bettors[row.Bet.choice].append({
+            "name": name,
+            "initials": initials,
+            "stake": row.Bet.stake,
+            "created_at": row.Bet.created_at.isoformat(),
+            "is_lone_wolf": summary[row.Bet.choice]["count"] == 1 and max(
+                summary[ch]["count"] for ch in summary if ch != row.Bet.choice
+            ) >= 3,
+            "outcome": outcome,
+            "outcome_label": OUTCOME_LABELS[outcome],
+            "quote": _build_detail_quote(
+                match=match,
+                choice=row.Bet.choice,
+                outcome=outcome,
+                stake=row.Bet.stake,
+                points_earned=row.Bet.points_earned,
+                winning_choice=winning_choice if is_finished else None,
+                name=name,
+            ),
+            "reward_label": _format_reward_label(outcome, row.Bet.stake, row.Bet.points_earned),
+            "points_earned": row.Bet.points_earned,
+        })
+
+    my_row = next((row for row in rows if row.User.id == user.id), None)
+    my_bet = None
+    if my_row:
+        if not is_finished:
+            my_outcome = "PENDING"
+        elif refunded:
+            my_outcome = "REFUND"
+        elif my_row.Bet.choice == winning_choice:
+            my_outcome = "WIN"
+        else:
+            my_outcome = "LOSE"
+
+        my_bet = {
+            "choice": my_row.Bet.choice,
+            "stake": my_row.Bet.stake,
+            "points_earned": my_row.Bet.points_earned,
+            "created_at": my_row.Bet.created_at.isoformat(),
+            "outcome": my_outcome,
+            "outcome_label": OUTCOME_LABELS[my_outcome],
+            "quote": _build_detail_quote(
+                match=match,
+                choice=my_row.Bet.choice,
+                outcome=my_outcome,
+                stake=my_row.Bet.stake,
+                points_earned=my_row.Bet.points_earned,
+                winning_choice=winning_choice if is_finished else None,
+                name=_user_display_name(my_row.User),
+            ),
+            "reward_label": _format_reward_label(my_outcome, my_row.Bet.stake, my_row.Bet.points_earned),
+        }
+
+    settlement["headline_quote"] = _build_headline_quote(
+        match=match,
+        settlement=settlement,
+        summary=summary,
+    )
+
+    return {
+        "match": _match_response(match),
+        "pool": {
+            "total_pool": total_pool,
+            "home_stakes": summary["HOME"]["stake"],
+            "draw_stakes": summary["DRAW"]["stake"],
+            "away_stakes": summary["AWAY"]["stake"],
+            "home_count": summary["HOME"]["count"],
+            "draw_count": summary["DRAW"]["count"],
+            "away_count": summary["AWAY"]["count"],
+        },
+        "settlement": settlement,
+        "bettors": bettors,
+        "my_bet": my_bet,
     }
 
 
