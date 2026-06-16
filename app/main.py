@@ -30,6 +30,14 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "Surrogate-Control": "no-store",
+}
+
+
 # ─── Startup: tạo bảng & mock data ───────────────────────────────────────────
 
 @app.on_event("startup")
@@ -142,16 +150,16 @@ class MatchPayload(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def read_home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request}, headers=NO_CACHE_HEADERS)
 
 @app.get("/admin", response_class=HTMLResponse)
 async def read_admin(request: Request, admin_user: User = Depends(get_admin_user)):
-    return templates.TemplateResponse("admin.html", {"request": request})
+    return templates.TemplateResponse("admin.html", {"request": request}, headers=NO_CACHE_HEADERS)
 
 
 @app.get("/profile", response_class=HTMLResponse)
 async def read_profile(request: Request, user: User = Depends(get_current_user)):
-    return templates.TemplateResponse("profile.html", {"request": request})
+    return templates.TemplateResponse("profile.html", {"request": request}, headers=NO_CACHE_HEADERS)
 
 
 @app.get("/api/v1/me")
