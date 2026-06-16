@@ -24,6 +24,19 @@ function safeImageSrc(value) {
     return "";
 }
 
+function safeCssColor(value) {
+    const color = String(value ?? "").trim();
+    return /^#[0-9a-f]{6}$/i.test(color) ? color : "#6366f1";
+}
+
+function renderMiniAvatar({ avatar_url, avatar_color, initials }) {
+    const avatarSrc = safeImageSrc(avatar_url);
+    if (avatarSrc) {
+        return `<img src="${avatarSrc}" alt="" class="w-5 h-5 rounded-full object-cover border border-indigo-400/70 flex-shrink-0">`;
+    }
+    return `<span class="w-5 h-5 rounded-full border border-indigo-400/70 flex items-center justify-center text-[9px] font-black text-white flex-shrink-0" style="background:${safeCssColor(avatar_color)}">${escapeHtml(initials || "??")}</span>`;
+}
+
 function toDatetimeLocal(value) {
     if (!value) return "";
     const date = new Date(value);
@@ -49,7 +62,16 @@ async function fetchMe() {
         const res = await fetch("/api/v1/me");
         if (res.ok) {
             const data = await res.json();
-            document.getElementById("user-info").innerText = `${data.email} | Admin`;
+            const shortEmail = data.email.split("@")[0];
+            const displayName = data.display_name || shortEmail;
+            const el = document.getElementById("user-info");
+            el.title = data.email;
+            el.innerHTML = `
+                <span class="inline-flex items-center gap-2">
+                    ${renderMiniAvatar(data)}
+                    <span class="font-semibold text-white truncate max-w-[10rem]">${escapeHtml(displayName)}</span>
+                    <span class="text-indigo-300">| Admin</span>
+                </span>`;
         } else {
             document.getElementById("user-info").innerText = "Lỗi xác thực";
         }

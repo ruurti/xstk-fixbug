@@ -452,6 +452,79 @@ async def get_match_bets(match_id: int, db: AsyncSession = Depends(get_db)):
     return result
 
 
+# ─── GET /api/v1/matches/{match_id}/detail — Chi tiết trận và đặt cược ───────
+@app.get("/api/v1/matches/{match_id}/detail")
+async def get_match_detail(
+    match_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    match = (await db.execute(
+        select(Match).where(Match.id == match_id)
+    )).scalars().first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Trận đấu không tồn tại.")
+
+    query = (
+        select(Bet, User)
+        .join(User, Bet.user_id == User.id)
+        .where(Bet.match_id == match_id)
+        .order_by(Bet.created_at.asc())
+    )
+    rows = (await db.execute(query)).all()
+
+    summary = {
+        "HOME": {"stake": 0, "count": 0},
+        "DRAW": {"stake": 0, "count": 0},
+        "AWAY": {"stake": 0, "count": 0},
+    }
+    bettors = {"HOME": [], "DRAW": [], "AWAY": []}
+
+    for row in rows:
+        choice = row.Bet.choice
+        summary[choice]["stake"] += row.Bet.stake
+        summary[choice]["count"] += 1
+
+    for row in rows:
+        name = row.User.email.split("@")[0]
+        initials = (name[:2]).upper()
+        my_count = summary[row.Bet.choice]["count"]
+        other_max = max(summary[ch]["count"] for ch in summary if ch != row.Bet.choice)
+        is_lone_wolf = my_count == 1 and other_max >= 3
+
+        bettors[row.Bet.choice].append({
+            "name": name,
+            "initials": initials,
+            "stake": row.Bet.stake,
+            "created_at": row.Bet.created_at.isoformat(),
+            "is_lone_wolf": is_lone_wolf,
+        })
+
+    my_bet = (await db.execute(
+        select(Bet).where(Bet.match_id == match_id, Bet.user_id == user.id)
+    )).scalars().first()
+
+    return {
+        "match": _match_response(match),
+        "pool": {
+            "total_pool": sum(summary[ch]["stake"] for ch in summary),
+            "home_stakes": summary["HOME"]["stake"],
+            "draw_stakes": summary["DRAW"]["stake"],
+            "away_stakes": summary["AWAY"]["stake"],
+            "home_count": summary["HOME"]["count"],
+            "draw_count": summary["DRAW"]["count"],
+            "away_count": summary["AWAY"]["count"],
+        },
+        "bettors": bettors,
+        "my_bet": None if not my_bet else {
+            "choice": my_bet.choice,
+            "stake": my_bet.stake,
+            "points_earned": my_bet.points_earned,
+            "created_at": my_bet.created_at.isoformat(),
+        },
+    }
+
+
 # ─── GET /api/v1/leaderboard — Bảng Phong Thần ───────────────────────────────
 @app.get("/api/v1/leaderboard")
 async def get_leaderboard(db: AsyncSession = Depends(get_db)):

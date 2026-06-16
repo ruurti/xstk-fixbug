@@ -75,6 +75,29 @@
         </a>
     </nav>
 
+    <div id="match-detail-modal" class="hidden fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm overflow-y-auto">
+        <div class="min-h-full px-4 py-4 flex items-start justify-center">
+            <div class="w-full max-w-5xl rounded-2xl border border-gray-700 bg-gray-900 shadow-2xl overflow-hidden">
+                <div class="flex items-start justify-between gap-3 px-4 py-4 border-b border-gray-800">
+                    <div class="min-w-0">
+                        <div class="text-[11px] uppercase tracking-[0.18em] text-gray-500">Chi tiết trận đấu</div>
+                        <div id="match-detail-title" class="mt-1 text-lg md:text-xl font-black text-white truncate"></div>
+                        <div id="match-detail-subtitle" class="mt-1 text-xs md:text-sm text-gray-400"></div>
+                    </div>
+                    <button type="button" onclick="closeMatchDetail()" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-gray-800 transition-colors" title="Đóng">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="px-4 py-4 space-y-4">
+                    <div id="match-detail-quote" class="rounded-xl border border-amber-900/60 bg-amber-950/30 px-4 py-3 text-amber-100 italic"></div>
+                    <div id="match-detail-body" class="space-y-4"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         function toggleLeaderboard() {
             const container = document.getElementById("leaderboard-container");

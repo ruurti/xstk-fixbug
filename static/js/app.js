@@ -1,6 +1,7 @@
 // ─── State ───────────────────────────────────────────────────────────────────
 let currentUser = null;          // { email, total_points }
 let placedBets = new Set();      // match IDs đã cược trong session này
+let matchDetailCache = new Map();
 
 // Bảng màu avatar — hash từ tên để màu ổn định
 const AVATAR_COLORS = [
@@ -31,11 +32,82 @@ function safeImageSrc(value) {
     return "";
 }
 
+function safeCssColor(value) {
+    const color = String(value ?? "").trim();
+    return /^#[0-9a-f]{6}$/i.test(color) ? color : "#6366f1";
+}
+
+function renderMiniAvatar({ avatar_url, avatar_color, initials }) {
+    const avatarSrc = safeImageSrc(avatar_url);
+    if (avatarSrc) {
+        return `<img src="${avatarSrc}" alt="" class="w-5 h-5 rounded-full object-cover border border-emerald-400/70 flex-shrink-0">`;
+    }
+    return `<span class="w-5 h-5 rounded-full border border-emerald-400/70 flex items-center justify-center text-[9px] font-black text-white flex-shrink-0" style="background:${safeCssColor(avatar_color)}">${escapeHtml(initials || "??")}</span>`;
+}
+
+const DETAIL_QUOTES = [
+    "Đám đông có thể ồn, nhưng quỹ luôn thích chỗ biết thắng.",
+    "Cửa ít người vào không có nghĩa là yếu, đôi khi là biết giữ tiền hơn.",
+    "Ai cũng thích đi theo số đông, còn điểm thì thích đi theo người tỉnh.",
+    "Cửa kia đông thật, nhưng ví tiền không ký hợp đồng với đám đông.",
+    "Hôm nay không cần hô to, chỉ cần vào đúng cửa rồi ngồi nhìn bảng điểm.",
+    "Chọn khôn một nhịp, khịa nhẹ cả phòng.",
+];
+
+function choiceLabel(choice) {
+    return { HOME: "Chủ nhà", DRAW: "Hòa", AWAY: "Khách" }[choice] || choice;
+}
+
+function formatVNDateTime(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    return date.toLocaleString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function getQuoteByDetail(detail) {
+    const pool = detail?.pool || {};
+    const stakeMap = [
+        ["HOME", Number(pool.home_stakes || 0)],
+        ["DRAW", Number(pool.draw_stakes || 0)],
+        ["AWAY", Number(pool.away_stakes || 0)],
+    ].sort((a, b) => b[1] - a[1]);
+    const dominant = stakeMap[0]?.[0] || "HOME";
+    const quoteSets = {
+        HOME: [
+            "Cửa chủ nhà đang có khí thế, nhưng đừng để cái ồn che mất cái khôn.",
+            "Đám đông đang nghiêng về chủ nhà, còn ai tỉnh thì vẫn biết quỹ thích gì.",
+        ],
+        DRAW: [
+            "Kèo hòa thường rất lì, nhìn hiền mà dễ làm cả bảng điểm im lặng.",
+            "Cửa hòa không ầm ĩ, nhưng lúc nổ thì ai cũng phải nhìn lại.",
+        ],
+        AWAY: [
+            "Cửa khách mà ít người vào thì lại càng có chất riêng.",
+            "Thích đi ngược đám đông à? Cửa khách đang chờ người có gan.",
+        ],
+    };
+    const poolQuotes = quoteSets[dominant] || DETAIL_QUOTES;
+    return poolQuotes[Math.floor(Math.random() * poolQuotes.length)];
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     fetchUserProfile();
     fetchUpcomingMatches();
     startTicker();
     fetchLeaderboard();
+    document.getElementById("match-detail-modal")?.addEventListener("click", e => {
+        if (e.target && e.target.id === "match-detail-modal") closeMatchDetail();
+    });
+    document.addEventListener("keydown", e => {
+        if (e.key === "Escape") closeMatchDetail();
+    });
     // Refresh pool odds mỗi 30 giây
     setInterval(fetchUpcomingMatches, 30_000);
     // Refresh ticker mỗi 60 giây
@@ -61,7 +133,15 @@ function renderUserInfo() {
     const el = document.getElementById("user-info");
     if (!currentUser) return;
     const shortEmail = currentUser.email.split("@")[0];
-    el.innerHTML = `👤 <span class="font-semibold text-white">${escapeHtml(shortEmail)}</span> | 🪙 <span class="text-yellow-400 font-bold" id="user-points">${currentUser.total_points.toLocaleString()}</span>đ`;
+    const displayName = currentUser.display_name || shortEmail;
+    el.title = currentUser.email;
+    el.innerHTML = `
+        <span class="inline-flex items-center gap-2 max-w-full">
+            ${renderMiniAvatar(currentUser)}
+            <span class="font-semibold text-white truncate max-w-[8rem]">${escapeHtml(displayName)}</span>
+            <span class="text-gray-500">|</span>
+            <span class="text-yellow-400 font-bold" id="user-points">${currentUser.total_points.toLocaleString()}</span><span class="text-yellow-400">đ</span>
+        </span>`;
 
     document.getElementById("admin-header-link")?.classList.toggle("hidden", !currentUser.is_admin);
     document.getElementById("admin-nav-link")?.classList.toggle("hidden", !currentUser.is_admin);
@@ -78,6 +158,7 @@ function updateDisplayedPoints(newTotal) {
 async function fetchUpcomingMatches() {
     const listEl = document.getElementById("match-list");
     try {
+        matchDetailCache.clear();
         const res = await fetch("/api/v1/matches");
         const matches = await res.json();
 
@@ -185,8 +266,17 @@ function renderMatchCard(match) {
 
     return `
         <div class="bg-gray-800 border border-gray-700 hover:border-emerald-500/50 rounded-xl p-4 shadow-sm transition duration-200 mb-3 last:mb-0">
-            <div class="text-center mb-2">
+            <div class="flex items-center justify-between mb-2">
                 <span class="text-xs bg-gray-900 text-emerald-400 font-mono font-semibold px-2 py-1 rounded">⏰ ${timeStr}</span>
+                <button type="button"
+                    class="inline-flex items-center gap-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 hover:border-emerald-500 hover:text-emerald-300 px-2.5 py-1 rounded-full transition-colors"
+                    onclick="openMatchDetail(${id})"
+                    title="Xem chi tiết trận">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 16h2M12 8v4m0 8a8 8 0 100-16 8 8 0 000 16z"/>
+                    </svg>
+                    <span>Chi tiết</span>
+                </button>
             </div>
 
             <div class="flex items-center justify-between my-3 px-2">
@@ -364,6 +454,7 @@ window.confirmBet = async function(matchId) {
         placedBets.add(matchId);
         updateDisplayedPoints(data.remaining_points);
         showToast(`✅ Đặt cược thành công! Còn lại ${data.remaining_points.toLocaleString()} điểm.`, "success");
+        matchDetailCache.delete(matchId);
 
         // Disable toàn bộ betting area
         const stakePanel = document.getElementById(`stake-panel-${matchId}`);
@@ -386,6 +477,170 @@ window.confirmBet = async function(matchId) {
 
 
 // ─── 9. Toggle Accordion ─────────────────────────────────────────────────────
+window.openMatchDetail = async function(matchId) {
+    const modal = document.getElementById("match-detail-modal");
+    const body = document.getElementById("match-detail-body");
+    if (!modal || !body) return;
+
+    modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+    body.innerHTML = `
+        <div class="flex items-center justify-center py-12 text-gray-400">
+            <div class="animate-pulse">Đang tải chi tiết trận...</div>
+        </div>`;
+
+    try {
+        const cached = matchDetailCache.get(matchId);
+        const response = cached ? null : await fetch(`/api/v1/matches/${matchId}/detail`);
+        if (response && !response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const data = cached || await response.json();
+        if (!cached) matchDetailCache.set(matchId, data);
+        renderMatchDetail(data);
+    } catch (err) {
+        console.error(err);
+        body.innerHTML = `
+            <div class="rounded-xl border border-red-800 bg-red-950/40 p-4 text-sm text-red-200">
+                Không thể tải chi tiết trận lúc này.
+            </div>`;
+    }
+};
+
+window.closeMatchDetail = function() {
+    const modal = document.getElementById("match-detail-modal");
+    if (modal) modal.classList.add("hidden");
+    document.body.style.overflow = "";
+};
+
+function renderMatchDetail(detail) {
+    const body = document.getElementById("match-detail-body");
+    const titleEl = document.getElementById("match-detail-title");
+    const subtitleEl = document.getElementById("match-detail-subtitle");
+    const quoteEl = document.getElementById("match-detail-quote");
+    if (!body || !titleEl || !subtitleEl || !quoteEl) return;
+
+    const match = detail.match || {};
+    const pool = detail.pool || {};
+    const bettors = detail.bettors || {};
+    const myBet = detail.my_bet;
+    const totalPool = Number(pool.total_pool || 0);
+    const choiceStats = [
+        { key: "HOME", stake: Number(pool.home_stakes || 0), count: Number(pool.home_count || 0), bettors: bettors.HOME || [] },
+        { key: "DRAW", stake: Number(pool.draw_stakes || 0), count: Number(pool.draw_count || 0), bettors: bettors.DRAW || [] },
+        { key: "AWAY", stake: Number(pool.away_stakes || 0), count: Number(pool.away_count || 0), bettors: bettors.AWAY || [] },
+    ];
+
+    titleEl.textContent = `${match.home_team} vs ${match.away_team}`;
+    subtitleEl.textContent = `Kèo chấp ${match.handicap ?? 0} | Bắt đầu ${formatVNDateTime(match.start_time)} | Trạng thái ${match.status}`;
+    quoteEl.textContent = getQuoteByDetail(detail);
+
+    const homePct = totalPool > 0 ? (choiceStats[0].stake / totalPool) * 100 : 0;
+    const drawPct = totalPool > 0 ? (choiceStats[1].stake / totalPool) * 100 : 0;
+    const awayPct = totalPool > 0 ? (choiceStats[2].stake / totalPool) * 100 : 0;
+
+    body.innerHTML = `
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            ${summaryTile("Tổng quỹ", `${totalPool.toLocaleString()}đ`, "text-yellow-400")}
+            ${summaryTile("Chủ nhà", `${choiceStats[0].stake.toLocaleString()}đ`, "text-emerald-300")}
+            ${summaryTile("Hòa", `${choiceStats[1].stake.toLocaleString()}đ`, "text-sky-300")}
+            ${summaryTile("Khách", `${choiceStats[2].stake.toLocaleString()}đ`, "text-pink-300")}
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            ${renderChoiceColumn(choiceStats[0], homePct)}
+            ${renderChoiceColumn(choiceStats[1], drawPct)}
+            ${renderChoiceColumn(choiceStats[2], awayPct)}
+        </div>
+
+        <div class="rounded-xl border border-gray-700 bg-gray-900/70 p-4">
+            <div class="flex items-center justify-between gap-3 mb-3">
+                <div>
+                    <div class="text-xs uppercase tracking-wide text-gray-500">Cửa của bạn</div>
+                    <div class="text-sm font-semibold text-white">${myBet ? choiceLabel(myBet.choice) : "Chưa vào cửa"}</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-xs text-gray-500">Điểm đã vào</div>
+                    <div class="text-lg font-black text-yellow-400">${myBet ? `${Number(myBet.stake).toLocaleString()}đ` : "0đ"}</div>
+                </div>
+            </div>
+            ${myBet ? `<div class="text-xs text-gray-400">Vào đúng cửa thì uống trà, vào lệch cửa thì ngồi ngẫm đời.</div>` : `<div class="text-xs text-gray-400">Chưa đặt cược vẫn xem được quỹ và danh sách để cân nhắc cửa vào.</div>`}
+        </div>
+    `;
+}
+
+function summaryTile(label, value, valueClass) {
+    return `
+        <div class="rounded-xl border border-gray-700 bg-gray-900/80 p-3">
+            <div class="text-[11px] uppercase tracking-wide text-gray-500">${escapeHtml(label)}</div>
+            <div class="mt-1 text-sm font-black ${valueClass}">${escapeHtml(value)}</div>
+        </div>`;
+}
+
+function renderChoiceColumn(choiceStat, pct) {
+    const list = choiceStat.bettors || [];
+    return `
+        <section class="rounded-xl border border-gray-700 bg-gray-900/80 p-4 flex flex-col gap-3">
+            <div class="flex items-center justify-between gap-2">
+                <div>
+                    <div class="text-xs uppercase tracking-wide text-gray-500">${escapeHtml(choiceLabel(choiceStat.key))}</div>
+                    <div class="text-sm font-semibold text-white">${choiceStat.count} người</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-xs text-gray-500">Tỷ trọng</div>
+                    <div class="text-sm font-black text-emerald-300">${pct.toFixed(1)}%</div>
+                </div>
+            </div>
+            <div class="h-2 rounded-full bg-gray-800 overflow-hidden">
+                <div class="h-full rounded-full ${choiceBarClass(choiceStat.key)}" style="width:${Math.max(4, pct)}%"></div>
+            </div>
+            <div class="text-xs text-gray-400">
+                ${choiceStat.stake.toLocaleString()}đ trong quỹ
+            </div>
+            <div class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                ${renderBettorList(list)}
+            </div>
+        </section>`;
+}
+
+function choiceBarClass(choice) {
+    return {
+        HOME: "bg-emerald-500",
+        DRAW: "bg-sky-500",
+        AWAY: "bg-pink-500",
+    }[choice] || "bg-emerald-500";
+}
+
+function renderBettorList(list) {
+    if (!list.length) {
+        return `<div class="text-xs text-gray-500 italic">Chưa có ai vào cửa này.</div>`;
+    }
+
+    return list.map(bettor => {
+        const bg = nameToColor(bettor.name || "");
+        const title = escapeHtml(
+            bettor.is_lone_wolf
+                ? `${bettor.name} - cú đi ngược đám đông (${bettor.stake}đ)`
+                : `${bettor.name} (${bettor.stake}đ)`
+        );
+        const wolfBadge = bettor.is_lone_wolf
+            ? `<span class="ml-auto text-[10px] font-bold text-amber-400">khác biệt</span>`
+            : "";
+        return `
+            <div class="flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-950/60 px-3 py-2" title="${title}">
+                <div class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black text-white flex-shrink-0" style="background:${bg}">
+                    ${escapeHtml(bettor.initials || "??")}
+                </div>
+                <div class="min-w-0 flex-1">
+                    <div class="text-sm font-semibold text-white truncate">${escapeHtml(bettor.name)}</div>
+                    <div class="text-[11px] text-gray-500">${formatVNDateTime(bettor.created_at)}</div>
+                </div>
+                <div class="text-sm font-black text-yellow-400">${Number(bettor.stake).toLocaleString()}đ</div>
+                ${wolfBadge}
+            </div>`;
+    }).join("");
+}
+
 window.toggleGroup = function(dateKey) {
     const content = document.getElementById(`content-${dateKey}`);
     const icon = document.getElementById(`icon-${dateKey}`);
