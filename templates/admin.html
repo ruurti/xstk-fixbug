@@ -3,82 +3,212 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Admin - Quản Lý Trận Đấu</title>
+    <title>Admin Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/css/style.css?v={{ asset_version }}">
+    <style>
+        .admin-shell {
+            background:
+                radial-gradient(circle at top left, rgba(16, 185, 129, 0.12), transparent 28%),
+                radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 24%),
+                #020617;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.82);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            box-shadow: 0 24px 50px rgba(2, 6, 23, 0.34);
+            backdrop-filter: blur(14px);
+        }
+        .metric-card {
+            background: linear-gradient(180deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.98));
+            border: 1px solid rgba(71, 85, 105, 0.45);
+        }
+        .tab-btn.active {
+            background: rgba(16, 185, 129, 0.15);
+            color: #d1fae5;
+            border-color: rgba(16, 185, 129, 0.4);
+        }
+        .switch[data-enabled="true"] .switch-track {
+            background: #059669;
+        }
+        .switch[data-enabled="true"] .switch-thumb {
+            transform: translateX(1.25rem);
+        }
+        .user-points-input::-webkit-outer-spin-button,
+        .user-points-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .user-points-input {
+            -moz-appearance: textfield;
+        }
+    </style>
 </head>
-<body class="bg-slate-50 text-slate-900 font-sans antialiased pb-12">
+<body class="admin-shell min-h-screen text-slate-100 antialiased pb-10">
+    <header class="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur">
+        <div class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 lg:px-6">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div class="min-w-0">
+                    <div class="flex items-center gap-3">
+                        <a href="/" class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">AP</a>
+                        <div class="min-w-0">
+                            <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Operations</p>
+                            <h1 class="truncate text-xl font-black text-white md:text-2xl">Admin Control Center</h1>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 md:justify-end">
+                    <button id="refresh-overview" type="button" class="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/12 px-3 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20">
+                        Làm mới dữ liệu
+                    </button>
+                    <a href="/" class="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:text-white">Trang chủ</a>
+                    <div id="user-info" class="max-w-full rounded-xl border border-slate-700 bg-slate-900/90 px-3 py-2 text-xs text-slate-300">
+                        Đang tải tài khoản...
+                    </div>
+                </div>
+            </div>
 
-    <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-50 px-4 py-3 flex justify-between items-center shadow-sm">
-        <h1 class="text-xl font-black tracking-wider text-sky-600">Admin Panel</h1>
-        <div class="flex items-center gap-2">
-            <a href="/" class="text-xs bg-sky-50 px-3 py-1.5 rounded-full border border-sky-200 text-sky-700 hover:bg-sky-100 transition-colors">
-                Trang chủ
-            </a>
-            <div id="user-info" class="text-xs bg-white px-3 py-1.5 rounded-full border border-slate-200 text-slate-700 shadow-sm">
-                Đang tải...
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <nav class="flex flex-wrap gap-2">
+                    <button class="tab-btn active rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 transition" data-tab-target="overview">Tổng quan</button>
+                    <button class="tab-btn rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 transition" data-tab-target="users">Người dùng</button>
+                    <button class="tab-btn rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 transition" data-tab-target="settings">Cài đặt</button>
+                    <button class="tab-btn rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 transition" data-tab-target="matches">Trận đấu</button>
+                </nav>
+                <div id="feature-status" class="flex flex-wrap gap-2 text-xs"></div>
             </div>
         </div>
     </header>
 
-    <main class="max-w-5xl mx-auto px-4 mt-6">
-        <section class="bg-white border border-slate-200 rounded-xl p-4 mb-6 shadow-sm">
-            <div class="flex items-center justify-between mb-4">
-                <h2 id="match-form-title" class="text-base font-bold uppercase tracking-wide text-slate-500">Thêm trận đấu</h2>
-                <button id="cancel-edit-btn" type="button" onclick="resetMatchForm()" class="hidden text-slate-600 border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors">
-                    Hủy sửa
-                </button>
-            </div>
-            <form id="match-form" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <input type="hidden" id="match-id">
-                <input id="home-team" class="bg-white border border-slate-200 text-slate-900 px-3 py-2 rounded-lg" placeholder="Đội nhà" required maxlength="80">
-                <input id="away-team" class="bg-white border border-slate-200 text-slate-900 px-3 py-2 rounded-lg" placeholder="Đội khách" required maxlength="80">
-                <input id="home-icon" class="bg-white border border-slate-200 text-slate-900 px-3 py-2 rounded-lg" placeholder="Icon/URL đội nhà">
-                <input id="away-icon" class="bg-white border border-slate-200 text-slate-900 px-3 py-2 rounded-lg" placeholder="Icon/URL đội khách">
-                <input id="handicap" type="number" step="0.25" value="0" class="bg-white border border-slate-200 text-slate-900 px-3 py-2 rounded-lg" placeholder="Kèo chấp">
-                <input id="start-time" type="datetime-local" class="bg-white border border-slate-200 text-slate-900 px-3 py-2 rounded-lg" required>
-                <select id="status" class="bg-white border border-slate-200 text-slate-900 px-3 py-2 rounded-lg">
-                    <option value="upcoming">upcoming</option>
-                    <option value="live">live</option>
-                </select>
-                <button id="save-match-btn" type="submit" class="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
-                    Lưu trận
-                </button>
-            </form>
-        </section>
+    <main class="mx-auto mt-6 flex max-w-7xl flex-col gap-6 px-4 lg:px-6">
+        <section id="toast" class="hidden rounded-2xl border px-4 py-3 text-sm font-medium"></section>
 
-        <section class="bg-white border border-slate-200 rounded-xl p-4 mb-6 shadow-sm">
-            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-                <h2 class="text-base font-bold uppercase tracking-wide text-slate-500">Import CSV trận đấu</h2>
+        <section data-tab-panel="overview" class="tab-panel flex flex-col gap-6">
+            <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" id="overview-metrics">
+                <div class="metric-card animate-pulse rounded-3xl p-5 h-28"></div>
+                <div class="metric-card animate-pulse rounded-3xl p-5 h-28"></div>
+                <div class="metric-card animate-pulse rounded-3xl p-5 h-28"></div>
+                <div class="metric-card animate-pulse rounded-3xl p-5 h-28"></div>
             </div>
-            <form id="csv-import-form" class="flex flex-col md:flex-row gap-3">
-                <input id="csv-file" type="file" accept=".csv,text/csv" class="flex-1 bg-white border border-slate-200 text-slate-900 px-3 py-2 rounded-lg file:mr-3 file:border-0 file:bg-sky-100 file:text-sky-700 file:px-3 file:py-1.5 file:rounded file:font-semibold">
-                <button id="csv-import-btn" type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
-                    Import CSV
-                </button>
-            </form>
-            <div id="csv-import-result" class="hidden mt-3 text-sm rounded-lg border px-3 py-2"></div>
-        </section>
 
-        <section class="bg-white border border-slate-200 rounded-xl p-4 mb-6 shadow-sm">
-            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-                <h2 class="text-base font-bold uppercase tracking-wide text-slate-500">Yêu cầu nạp điểm</h2>
-                <button type="button" onclick="fetchRechargeRequests()" class="text-slate-600 border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors">
-                    Làm mới
-                </button>
+            <div class="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                <div class="glass-panel rounded-3xl p-5">
+                    <div class="mb-4 flex items-center justify-between">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">User snapshot</p>
+                            <h2 class="text-lg font-bold text-white">Danh sách người dùng mới nhất</h2>
+                        </div>
+                        <button id="quick-refresh-users" type="button" class="rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-white">Làm mới</button>
+                    </div>
+                    <div id="overview-user-list" class="space-y-3"></div>
+                </div>
+
+                <div class="glass-panel rounded-3xl p-5">
+                    <div class="mb-4">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Feature state</p>
+                        <h2 class="text-lg font-bold text-white">Trạng thái tính năng</h2>
+                    </div>
+                    <div id="overview-features" class="space-y-3"></div>
+                </div>
             </div>
-            <div id="admin-recharge-list" class="space-y-3">
-                <div class="animate-pulse bg-white h-20 rounded-xl border border-slate-200 shadow-sm"></div>
+
+            <div class="glass-panel rounded-3xl p-5">
+                <div class="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Recharge queue</p>
+                        <h2 class="text-lg font-bold text-white">Yêu cầu nạp điểm</h2>
+                    </div>
+                    <button id="refresh-recharge" type="button" class="rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-white">Làm mới</button>
+                </div>
+                <div id="admin-recharge-list" class="space-y-3">
+                    <div class="animate-pulse rounded-2xl border border-slate-800 bg-slate-950/60 h-24"></div>
+                </div>
             </div>
         </section>
 
-        <div class="flex items-center justify-between mb-4">
-            <h2 class="text-base font-bold uppercase tracking-wide text-slate-500">Danh sách trận đấu</h2>
-        </div>
+        <section data-tab-panel="users" class="tab-panel hidden flex-col gap-5">
+            <div class="glass-panel rounded-3xl p-5">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">User management</p>
+                        <h2 class="text-lg font-bold text-white">Quản lý danh sách user</h2>
+                    </div>
+                    <div class="flex flex-col gap-2 sm:flex-row">
+                        <input id="user-search" type="search" placeholder="Tìm theo email hoặc tên hiển thị..." class="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500 sm:w-80">
+                        <button id="refresh-users" type="button" class="rounded-2xl border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:text-white">Tải lại</button>
+                    </div>
+                </div>
+            </div>
+            <div id="admin-user-list" class="space-y-4"></div>
+        </section>
 
-        <div id="admin-match-list" class="space-y-4">
-            <div class="animate-pulse bg-white h-28 rounded-xl border border-slate-200 shadow-sm"></div>
-        </div>
+        <section data-tab-panel="settings" class="tab-panel hidden flex-col gap-5">
+            <div class="glass-panel rounded-3xl p-5">
+                <div class="mb-5">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Settings</p>
+                    <h2 class="text-lg font-bold text-white">Điều khiển tính năng nạp và đổi điểm</h2>
+                </div>
+                <div id="settings-list" class="space-y-4"></div>
+                <div class="mt-5 flex justify-end">
+                    <button id="save-settings" type="button" class="rounded-2xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">Lưu cài đặt</button>
+                </div>
+            </div>
+        </section>
+
+        <section data-tab-panel="matches" class="tab-panel hidden flex-col gap-5">
+            <div class="glass-panel rounded-3xl p-5">
+                <div class="mb-4 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Match editor</p>
+                        <h2 id="match-form-title" class="text-lg font-bold text-white">Thêm trận đấu</h2>
+                    </div>
+                    <button id="cancel-edit-btn" type="button" class="hidden rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-white">Hủy sửa</button>
+                </div>
+                <form id="match-form" class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <input type="hidden" id="match-id">
+                    <input id="home-team" class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500" placeholder="Đội nhà" required maxlength="80">
+                    <input id="away-team" class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500" placeholder="Đội khách" required maxlength="80">
+                    <input id="home-icon" class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500" placeholder="Icon/URL đội nhà">
+                    <input id="away-icon" class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500" placeholder="Icon/URL đội khách">
+                    <input id="handicap" type="number" step="0.25" value="0" class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500" placeholder="Kèo chấp">
+                    <input id="start-time" type="datetime-local" class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500" required>
+                    <select id="status" class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500">
+                        <option value="upcoming">upcoming</option>
+                        <option value="live">live</option>
+                    </select>
+                    <button id="save-match-btn" type="submit" class="rounded-2xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-sky-400">
+                        Lưu trận
+                    </button>
+                </form>
+            </div>
+
+            <div class="glass-panel rounded-3xl p-5">
+                <div class="mb-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">CSV import</p>
+                    <h2 class="text-lg font-bold text-white">Import danh sách trận</h2>
+                </div>
+                <form id="csv-import-form" class="flex flex-col gap-3 lg:flex-row">
+                    <input id="csv-file" type="file" accept=".csv,text/csv" class="flex-1 rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-2.5 text-sm text-slate-200 file:mr-3 file:rounded-xl file:border-0 file:bg-sky-500/15 file:px-3 file:py-2 file:font-semibold file:text-sky-200">
+                    <button id="csv-import-btn" type="submit" class="rounded-2xl bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-400">
+                        Import CSV
+                    </button>
+                </form>
+                <div id="csv-import-result" class="hidden mt-3 rounded-2xl border px-4 py-3 text-sm"></div>
+            </div>
+
+            <div class="glass-panel rounded-3xl p-5">
+                <div class="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Match operations</p>
+                        <h2 class="text-lg font-bold text-white">Quản lý trận đấu</h2>
+                    </div>
+                    <span class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs text-slate-400">Nhập tỉ số để giải trận</span>
+                </div>
+                <div id="admin-match-list" class="space-y-4">
+                    <div class="animate-pulse rounded-2xl border border-slate-800 bg-slate-950/60 h-28"></div>
+                </div>
+            </div>
+        </section>
     </main>
 
     <script src="/static/js/admin.js?v={{ asset_version }}"></script>

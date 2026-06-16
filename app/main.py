@@ -18,6 +18,7 @@ import asyncio
 import os
 import urllib.parse
 import urllib.request
+from uuid import UUID
 from pathlib import Path
 import csv
 import io
@@ -27,6 +28,7 @@ import re
 
 from app.database import engine, Base, get_db
 from app.models import Match, MatchStatus, Bet, User, PointRechargeRequest, PointRechargeStatus
+from app.models import Match, MatchStatus, Bet, User, PointRechargeRequest, PointRechargeStatus, AppSetting
 from app.dependencies import get_current_user, get_admin_user, ADMIN_EMAILS
 
 logger = logging.getLogger(__name__)
@@ -191,6 +193,39 @@ async def notify_admin_recharge_request(request_id: int, user: User, amount: int
     except Exception:
         logger.exception("Failed to send Telegram recharge notification.")
 
+DEFAULT_FEATURE_SETTINGS = {
+    "topup_enabled": "1",
+    "exchange_enabled": "1",
+}
+
+
+def _parse_bool_setting(value: Optional[str], default: bool = True) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+async def _ensure_default_settings(db: AsyncSession) -> None:
+    existing = (await db.execute(select(AppSetting))).scalars().all()
+    existing_keys = {item.key for item in existing}
+    changed = False
+    for key, value in DEFAULT_FEATURE_SETTINGS.items():
+        if key not in existing_keys:
+            db.add(AppSetting(key=key, value=value))
+            changed = True
+    if changed:
+        await db.commit()
+
+
+async def _get_feature_settings(db: AsyncSession) -> dict[str, bool]:
+    await _ensure_default_settings(db)
+    settings = (await db.execute(select(AppSetting))).scalars().all()
+    value_map = {item.key: item.value for item in settings}
+    return {
+        "topup_enabled": _parse_bool_setting(value_map.get("topup_enabled"), True),
+        "exchange_enabled": _parse_bool_setting(value_map.get("exchange_enabled"), True),
+    }
+
 
 # ─── Startup: tạo bảng & mock data ───────────────────────────────────────────
 
@@ -270,22 +305,23 @@ async def startup_event():
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_bets_user_match ON bets (user_id, match_id)"
             )
 
-    # async with AsyncSession(engine) as session:
-    #     result = await session.execute(select(Match))
-    #     if not result.scalars().first():
-    #         mock_matches = [
-    #             Match(home_team="Vietnam", away_team="Thailand",
-    #                   handicap=-0.5, status=MatchStatus.upcoming,
-    #                   start_time=datetime(2026, 6, 20, 19, 0)),
-    #             Match(home_team="Real Madrid", away_team="Barcelona",
-    #                   handicap=-1.5, status=MatchStatus.upcoming,
-    #                   start_time=datetime(2026, 6, 21, 2, 45)),
-    #             Match(home_team="Man City", away_team="Man United",
-    #                   handicap=0.5, status=MatchStatus.upcoming,
-    #                   start_time=datetime(2026, 6, 22, 22, 0)),
-    #         ]
-    #         session.add_all(mock_matches)
-    #         await session.commit()
+    async with AsyncSession(engine) as session:
+        await _ensure_default_settings(session)
+        result = await session.execute(select(Match))
+        if not result.scalars().first():
+            mock_matches = [
+                Match(home_team="Vietnam", away_team="Thailand",
+                      handicap=-0.5, status=MatchStatus.upcoming,
+                      start_time=datetime(2026, 6, 20, 19, 0)),
+                Match(home_team="Real Madrid", away_team="Barcelona",
+                      handicap=-1.5, status=MatchStatus.upcoming,
+                      start_time=datetime(2026, 6, 21, 2, 45)),
+                Match(home_team="Man City", away_team="Man United",
+                      handicap=0.5, status=MatchStatus.upcoming,
+                      start_time=datetime(2026, 6, 22, 22, 0)),
+            ]
+            session.add_all(mock_matches)
+            await session.commit()
 
 
 # ─── Pydantic Schemas ─────────────────────────────────────────────────────────
@@ -310,6 +346,15 @@ class MatchPayload(BaseModel):
 
 class PointRechargePayload(BaseModel):
     amount: int = Field(..., ge=10, le=10000)
+
+
+class AdminSettingsPayload(BaseModel):
+    topup_enabled: bool
+    exchange_enabled: bool
+
+
+class AdminUserPointsPayload(BaseModel):
+    total_points: int = Field(..., ge=0, le=1_000_000_000)
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
@@ -418,6 +463,9 @@ async def get_public_user_bets(
         }
         for r in rows
     ]
+@app.get("/api/v1/settings")
+async def get_public_settings(db: AsyncSession = Depends(get_db)):
+    return await _get_feature_settings(db)
 
 
 # POST /api/v1/me/update — Cập nhật thông tin cá nhân (display_name)
@@ -571,6 +619,10 @@ async def create_recharge_request(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    feature_settings = await _get_feature_settings(db)
+    if not feature_settings.get("topup_enabled", True):
+        raise HTTPException(status_code=403, detail="Tính năng nạp điểm đang tạm tắt.")
+
     request = PointRechargeRequest(
         user_id=user.id,
         amount=payload.amount,
@@ -945,6 +997,125 @@ async def get_activity_feed(db: AsyncSession = Depends(get_db)):
     return activities
 
 
+@app.get("/api/v1/admin/overview")
+async def get_admin_overview(admin_user: User = Depends(get_admin_user), db: AsyncSession = Depends(get_db)):
+    total_users = (await db.execute(select(func.count()).select_from(User))).scalar_one()
+    total_matches = (await db.execute(select(func.count()).select_from(Match))).scalar_one()
+    upcoming_matches = (
+        await db.execute(select(func.count()).select_from(Match).where(Match.status == MatchStatus.upcoming))
+    ).scalar_one()
+    total_bets = (await db.execute(select(func.count()).select_from(Bet))).scalar_one()
+    total_points = (await db.execute(select(func.coalesce(func.sum(User.total_points), 0)))).scalar_one()
+    feature_settings = await _get_feature_settings(db)
+
+    return {
+        "total_users": total_users,
+        "total_matches": total_matches,
+        "upcoming_matches": upcoming_matches,
+        "total_bets": total_bets,
+        "total_points": total_points,
+        "features": feature_settings,
+    }
+
+
+@app.get("/api/v1/admin/settings")
+async def get_admin_settings(admin_user: User = Depends(get_admin_user), db: AsyncSession = Depends(get_db)):
+    return await _get_feature_settings(db)
+
+
+@app.post("/api/v1/admin/settings")
+async def update_admin_settings(
+    payload: AdminSettingsPayload,
+    admin_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _ensure_default_settings(db)
+    settings = (await db.execute(select(AppSetting))).scalars().all()
+    settings_map = {item.key: item for item in settings}
+
+    for key, value in {
+        "topup_enabled": payload.topup_enabled,
+        "exchange_enabled": payload.exchange_enabled,
+    }.items():
+        setting = settings_map.get(key)
+        if not setting:
+            setting = AppSetting(key=key, value="1" if value else "0")
+        else:
+            setting.value = "1" if value else "0"
+        db.add(setting)
+
+    await db.commit()
+    return await _get_feature_settings(db)
+
+
+@app.get("/api/v1/admin/users")
+async def get_admin_users(
+    q: str = "",
+    admin_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    users = (await db.execute(select(User).order_by(desc(User.created_at)))).scalars().all()
+    bets = (await db.execute(select(Bet).order_by(desc(Bet.created_at)))).scalars().all()
+
+    search = q.strip().lower()
+    filtered_users = [
+        user for user in users
+        if not search
+        or search in user.email.lower()
+        or search in (user.display_name or "").lower()
+    ]
+
+    bets_by_user: dict[str, list[Bet]] = {}
+    for bet in bets:
+        bets_by_user.setdefault(str(bet.user_id), []).append(bet)
+
+    return [
+        {
+            "id": str(user.id),
+            "email": user.email,
+            "display_name": user.display_name,
+            "total_points": user.total_points,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "last_bet_at": bets_by_user[str(user.id)][0].created_at.isoformat() if bets_by_user.get(str(user.id)) else None,
+            "bet_count": len(bets_by_user.get(str(user.id), [])),
+            "win_count": sum(
+                1
+                for bet in bets_by_user.get(str(user.id), [])
+                if (bet.points_earned or 0) > 0
+            ),
+            "loss_count": sum(
+                1
+                for bet in bets_by_user.get(str(user.id), [])
+                if bet.points_earned == 0
+            ),
+            "is_admin": user.email.strip().lower() in ADMIN_EMAILS,
+        }
+        for user in filtered_users
+    ]
+
+
+@app.post("/api/v1/admin/users/{user_id}/points")
+async def update_admin_user_points(
+    user_id: UUID,
+    payload: AdminUserPointsPayload,
+    admin_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user = (await db.execute(select(User).where(User.id == user_id))).scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Người dùng không tồn tại.")
+
+    user.total_points = payload.total_points
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return {
+        "id": str(user.id),
+        "total_points": user.total_points,
+    }
+
+
 # GET /api/v1/admin/matches — Danh sách tất cả trận đấu cho Admin
 def _match_response(match: Match):
     return {
@@ -1021,8 +1192,10 @@ async def _build_profile_payload(
         "is_self": True,
         "can_edit": True,
     }
-    if include_badge and db is not None:
-        payload["badge"] = await _build_user_badge_for_profile(user, db)
+    if db is not None:
+        payload["features"] = await _get_feature_settings(db)
+        if include_badge:
+            payload["badge"] = await _build_user_badge_for_profile(user, db)
     return payload
 
 
