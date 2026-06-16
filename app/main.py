@@ -181,22 +181,22 @@ async def startup_event():
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_bets_user_match ON bets (user_id, match_id)"
             )
 
-    async with AsyncSession(engine) as session:
-        result = await session.execute(select(Match))
-        if not result.scalars().first():
-            mock_matches = [
-                Match(home_team="Vietnam", away_team="Thailand",
-                      handicap=-0.5, status=MatchStatus.upcoming,
-                      start_time=datetime(2026, 6, 20, 19, 0)),
-                Match(home_team="Real Madrid", away_team="Barcelona",
-                      handicap=-1.5, status=MatchStatus.upcoming,
-                      start_time=datetime(2026, 6, 21, 2, 45)),
-                Match(home_team="Man City", away_team="Man United",
-                      handicap=0.5, status=MatchStatus.upcoming,
-                      start_time=datetime(2026, 6, 22, 22, 0)),
-            ]
-            session.add_all(mock_matches)
-            await session.commit()
+    # async with AsyncSession(engine) as session:
+    #     result = await session.execute(select(Match))
+    #     if not result.scalars().first():
+    #         mock_matches = [
+    #             Match(home_team="Vietnam", away_team="Thailand",
+    #                   handicap=-0.5, status=MatchStatus.upcoming,
+    #                   start_time=datetime(2026, 6, 20, 19, 0)),
+    #             Match(home_team="Real Madrid", away_team="Barcelona",
+    #                   handicap=-1.5, status=MatchStatus.upcoming,
+    #                   start_time=datetime(2026, 6, 21, 2, 45)),
+    #             Match(home_team="Man City", away_team="Man United",
+    #                   handicap=0.5, status=MatchStatus.upcoming,
+    #                   start_time=datetime(2026, 6, 22, 22, 0)),
+    #         ]
+    #         session.add_all(mock_matches)
+    #         await session.commit()
 
 
 # ─── Pydantic Schemas ─────────────────────────────────────────────────────────
