@@ -44,6 +44,7 @@ class Match(Base):
     handicap = Column(Float, default=0.0)   # Kèo chấp: cộng vào điểm đội nhà
     status = Column(Enum(MatchStatus), default=MatchStatus.upcoming, nullable=False)
     start_time = Column(DateTime, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
 
 class Bet(Base):
     __tablename__ = "bets"

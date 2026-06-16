@@ -49,7 +49,7 @@ NO_CACHE_HEADERS = {
 CHOICE_LABELS = {"HOME": "Chủ nhà", "DRAW": "Hòa", "AWAY": "Khách"}
 OUTCOME_LABELS = {
     "WIN": "Thắng",
-    "LOSE": "Chưa tài đâu",
+    "LOSE": "Thua",
     "REFUND": "Hoàn điểm",
     "PENDING": "Chờ kết quả",
 }
@@ -73,10 +73,19 @@ async def startup_event():
             "handicap": "ALTER TABLE matches ADD COLUMN handicap FLOAT DEFAULT 0.0",
             "status": "ALTER TABLE matches ADD COLUMN status VARCHAR DEFAULT 'upcoming'",
             "start_time": "ALTER TABLE matches ADD COLUMN start_time DATETIME",
+            "resolved_at": "ALTER TABLE matches ADD COLUMN resolved_at DATETIME",
         }
         for column_name, ddl in missing_match_columns.items():
             if column_name not in match_column_names:
                 await conn.exec_driver_sql(ddl)
+
+        await conn.exec_driver_sql(
+            """
+            UPDATE matches
+            SET resolved_at = start_time
+            WHERE status = 'finished' AND resolved_at IS NULL
+            """
+        )
 
         await conn.exec_driver_sql(
             """
@@ -513,7 +522,7 @@ async def get_latest_finished_match_detail(
         await db.execute(
             select(Match)
             .where(Match.status == MatchStatus.finished)
-            .order_by(desc(Match.start_time), desc(Match.id))
+            .order_by(desc(func.coalesce(Match.resolved_at, Match.start_time)), desc(Match.id))
             .limit(1)
         )
     ).scalars().first()
@@ -704,6 +713,7 @@ def _match_response(match: Match):
         "handicap": match.handicap,
         "status": match.status,
         "start_time": match.start_time.isoformat(),
+        "resolved_at": match.resolved_at.isoformat() if getattr(match, "resolved_at", None) else None,
     }
 
 
@@ -1316,6 +1326,7 @@ async def resolve_match(
                     db.add(user_q)
 
         match.status = MatchStatus.finished
+        match.resolved_at = datetime.utcnow()
         db.add(match)
         await db.commit()
 
