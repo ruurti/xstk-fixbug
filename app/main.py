@@ -14,13 +14,17 @@ import logging
 import hashlib
 import random
 import uuid as uuid_lib
+import asyncio
+import os
+import urllib.parse
+import urllib.request
 from pathlib import Path
 import csv
 import io
 from decimal import Decimal, ROUND_DOWN
 
 from app.database import engine, Base, get_db
-from app.models import Match, MatchStatus, Bet, User
+from app.models import Match, MatchStatus, Bet, User, PointRechargeRequest, PointRechargeStatus
 from app.dependencies import get_current_user, get_admin_user, ADMIN_EMAILS
 
 logger = logging.getLogger(__name__)
@@ -53,6 +57,46 @@ OUTCOME_LABELS = {
     "REFUND": "Hoàn điểm",
     "PENDING": "Chờ kết quả",
 }
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "").strip()
+APP_BASE_URL = os.getenv("APP_BASE_URL", "").strip().rstrip("/")
+
+
+def _send_telegram_message_sync(text: str) -> None:
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_ADMIN_CHAT_ID:
+        return
+    data = urllib.parse.urlencode({
+        "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": "true",
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+        data=data,
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urllib.request.urlopen(req, timeout=8) as response:
+        response.read()
+
+
+async def notify_admin_recharge_request(request_id: int, user: User, amount: int) -> None:
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_ADMIN_CHAT_ID:
+        return
+    admin_url = f"{APP_BASE_URL}/admin" if APP_BASE_URL else "/admin"
+    text = (
+        "Yeu cau nap diem moi\n"
+        f"Ma yeu cau: #{request_id}\n"
+        f"User: {user.email}\n"
+        f"So diem: {amount:,}\n"
+        f"Trang admin: {admin_url}"
+    )
+    try:
+        await asyncio.to_thread(_send_telegram_message_sync, text)
+    except Exception:
+        logger.exception("Failed to send Telegram recharge notification.")
 
 
 # ─── Startup: tạo bảng & mock data ───────────────────────────────────────────
@@ -170,6 +214,9 @@ class MatchPayload(BaseModel):
     handicap: float = 0.0
     status: MatchStatus = MatchStatus.upcoming
     start_time: datetime
+
+class PointRechargePayload(BaseModel):
+    amount: int = Field(..., ge=100, le=10000)
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
@@ -348,6 +395,44 @@ async def get_my_bets(user: User = Depends(get_current_user), db: AsyncSession =
         }
         for r in rows
     ]
+
+
+@app.get("/api/v1/me/recharge-requests")
+async def get_my_recharge_requests(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    rows = (
+        await db.execute(
+            select(PointRechargeRequest)
+            .where(PointRechargeRequest.user_id == user.id)
+            .order_by(PointRechargeRequest.created_at.desc())
+        )
+    ).scalars().all()
+    return [_recharge_request_response(row) for row in rows]
+
+
+@app.post("/api/v1/me/recharge-requests", status_code=201)
+async def create_recharge_request(
+    payload: PointRechargePayload,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    request = PointRechargeRequest(
+        user_id=user.id,
+        amount=payload.amount,
+        status=PointRechargeStatus.pending,
+    )
+    try:
+        db.add(request)
+        await db.commit()
+        await db.refresh(request)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    await notify_admin_recharge_request(request.id, user, request.amount)
+    return {
+        "message": "Yeu cau nap diem da duoc gui va dang cho admin xac nhan.",
+        "request": _recharge_request_response(request),
+    }
 
 
 # GET /api/v1/matches — Danh sách upcoming kèm pool stats per match
@@ -739,6 +824,30 @@ def _user_avatar_payload(user: User) -> dict:
     }
 
 
+def _recharge_request_response(request: PointRechargeRequest, user: Optional[User] = None, admin: Optional[User] = None) -> dict:
+    payload = {
+        "id": request.id,
+        "amount": request.amount,
+        "status": request.status,
+        "created_at": request.created_at.isoformat(),
+        "approved_at": request.approved_at.isoformat() if request.approved_at else None,
+    }
+    if user:
+        payload["user"] = {
+            "id": str(user.id),
+            "email": user.email,
+            **_user_avatar_payload(user),
+            "total_points": user.total_points,
+        }
+    if admin:
+        payload["approved_by"] = {
+            "id": str(admin.id),
+            "email": admin.email,
+            "display_name": _user_display_name(admin),
+        }
+    return payload
+
+
 def _stable_pick(options, seed: str) -> str:
     if not options:
         return ""
@@ -1019,6 +1128,79 @@ async def get_all_matches(admin_user: User = Depends(get_admin_user), db: AsyncS
     query = select(Match).order_by(Match.start_time.asc())
     rows = (await db.execute(query)).scalars().all()
     return [_match_response(r) for r in rows]
+
+
+@app.get("/api/v1/admin/recharge-requests")
+async def get_recharge_requests(admin_user: User = Depends(get_admin_user), db: AsyncSession = Depends(get_db)):
+    rows = (
+        await db.execute(
+            select(PointRechargeRequest, User)
+            .join(User, PointRechargeRequest.user_id == User.id)
+            .order_by(
+                case((PointRechargeRequest.status == PointRechargeStatus.pending, 0), else_=1),
+                PointRechargeRequest.created_at.desc(),
+            )
+        )
+    ).all()
+    return [_recharge_request_response(request, user) for request, user in rows]
+
+
+@app.post("/api/v1/admin/recharge-requests/{request_id}/approve")
+async def approve_recharge_request(
+    request_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    request = (
+        await db.execute(select(PointRechargeRequest).where(PointRechargeRequest.id == request_id))
+    ).scalars().first()
+    if not request:
+        raise HTTPException(status_code=404, detail="Yeu cau nap diem khong ton tai.")
+    if request.status != PointRechargeStatus.pending:
+        raise HTTPException(status_code=409, detail="Yeu cau nay da duoc xu ly.")
+
+    try:
+        approved_at = datetime.utcnow()
+        status_update = await db.execute(
+            update(PointRechargeRequest)
+            .where(
+                PointRechargeRequest.id == request_id,
+                PointRechargeRequest.status == PointRechargeStatus.pending,
+            )
+            .values(
+                status=PointRechargeStatus.approved,
+                approved_at=approved_at,
+                approved_by_user_id=admin_user.id,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if status_update.rowcount != 1:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="Yeu cau nay da duoc xu ly.")
+
+        await db.execute(
+            update(User)
+            .where(User.id == request.user_id)
+            .values(total_points=User.total_points + request.amount)
+            .execution_options(synchronize_session=False)
+        )
+        await db.commit()
+        await db.refresh(request)
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    user = (
+        await db.execute(select(User).where(User.id == request.user_id))
+    ).scalars().first()
+    if user:
+        await db.refresh(user)
+    return {
+        "message": "Da xac nhan va cong diem cho user.",
+        "request": _recharge_request_response(request, user, admin_user),
+    }
 
 
 # POST /api/v1/admin/matches — Thêm trận đấu mới

@@ -2,6 +2,7 @@
 let _profileData  = null;
 let _selectedFile = null;
 let openCardId    = null;
+let _rechargeRequests = [];
 
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, ch => ({
@@ -32,8 +33,10 @@ function safeCssColor(value) {
 document.addEventListener("DOMContentLoaded", () => {
     fetchProfile();
     fetchBetHistory();
+    fetchRechargeRequests();
     initAvatarModal();
     initNameModal();
+    initRechargeModal();
 });
 
 // ─── Fetch & render profile ───────────────────────────────────────────────────
@@ -415,4 +418,106 @@ function toggleDetail(betId) {
     cardEl.classList.toggle("active", !isOpen);
     arrowEl.classList.toggle("rotate-180", !isOpen);
     openCardId = isOpen ? null : betId;
+}
+
+async function fetchRechargeRequests() {
+    const listEl = document.getElementById("recharge-list");
+    if (!listEl) return;
+    try {
+        const res = await fetch("/api/v1/me/recharge-requests");
+        if (!res.ok) {
+            listEl.innerHTML = `<div class="text-sm text-red-400 py-3">Khong the tai yeu cau nap diem.</div>`;
+            return;
+        }
+        _rechargeRequests = await res.json();
+        renderRechargeRequests(_rechargeRequests);
+    } catch (err) {
+        console.error(err);
+        listEl.innerHTML = `<div class="text-sm text-red-400 py-3">Loi ket noi.</div>`;
+    }
+}
+
+function renderRechargeRequests(requests) {
+    const listEl = document.getElementById("recharge-list");
+    if (!listEl) return;
+    if (!requests.length) {
+        listEl.innerHTML = `<div class="text-sm text-slate-500 py-3">Chua co yeu cau nap diem.</div>`;
+        return;
+    }
+
+    listEl.innerHTML = requests.slice(0, 5).map(item => {
+        const isPending = item.status === "pending";
+        const badge = isPending
+            ? `<span class="text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-700 border border-amber-200">Dang cho</span>`
+            : `<span class="text-xs px-2 py-0.5 rounded-full font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Da xac nhan</span>`;
+        const time = new Date(item.created_at).toLocaleString("vi-VN", {
+            day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"
+        });
+        return `
+            <div class="flex items-center justify-between gap-3 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50">
+                <div class="min-w-0">
+                    <div class="font-black text-[#D3af37]">${Number(item.amount).toLocaleString()} diem</div>
+                    <div class="text-xs text-slate-500">${escapeHtml(time)}</div>
+                </div>
+                ${badge}
+            </div>`;
+    }).join("");
+}
+
+function initRechargeModal() {
+    const modal = document.getElementById("recharge-modal");
+    const openBtn = document.getElementById("open-recharge-modal");
+    const closeBtn = document.getElementById("close-recharge-modal");
+    const cancelBtn = document.getElementById("btn-recharge-cancel");
+    const saveBtn = document.getElementById("btn-recharge-save");
+    const input = document.getElementById("recharge-amount");
+    const errorEl = document.getElementById("recharge-error");
+    if (!modal || !openBtn || !closeBtn || !cancelBtn || !saveBtn || !input || !errorEl) return;
+
+    const open = () => {
+        modal.classList.add("show");
+        input.value = "";
+        errorEl.classList.add("hidden");
+        setTimeout(() => input.focus(), 80);
+    };
+    const close = () => modal.classList.remove("show");
+
+    openBtn.addEventListener("click", open);
+    closeBtn.addEventListener("click", close);
+    cancelBtn.addEventListener("click", close);
+    modal.addEventListener("click", e => { if (e.target === modal) close(); });
+
+    saveBtn.addEventListener("click", async () => {
+        const amount = Number(input.value);
+        if (!Number.isInteger(amount) || amount < 100 || amount > 10000) {
+            return showErr(errorEl, "Vui long nhap so diem tu 100 den 10000.");
+        }
+
+        saveBtn.disabled = true;
+        const oldText = saveBtn.textContent;
+        saveBtn.textContent = "Dang gui...";
+        errorEl.classList.add("hidden");
+
+        try {
+            const res = await fetch("/api/v1/me/recharge-requests", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ amount }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || `Loi ${res.status}`);
+            close();
+            await fetchRechargeRequests();
+        } catch (err) {
+            showErr(errorEl, err.message || "Khong the gui yeu cau nap diem.");
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = oldText;
+        }
+    });
+
+    input.addEventListener("keydown", e => { if (e.key === "Enter") saveBtn.click(); });
+    document.addEventListener("keydown", e => {
+        if (e.key === "Escape" && modal.classList.contains("show")) close();
+    });
 }

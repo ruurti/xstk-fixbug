@@ -1,8 +1,10 @@
 let matchCache = [];
+let rechargeCache = [];
 
 document.addEventListener("DOMContentLoaded", () => {
     fetchMe();
     fetchMatches();
+    fetchRechargeRequests();
     document.getElementById("match-form").addEventListener("submit", saveMatch);
     document.getElementById("csv-import-form").addEventListener("submit", importMatchesCsv);
 });
@@ -35,6 +37,86 @@ function renderMiniAvatar({ avatar_url, avatar_color, initials }) {
         return `<img src="${avatarSrc}" alt="" class="w-5 h-5 rounded-full object-cover border border-sky-300 flex-shrink-0">`;
     }
     return `<span class="w-5 h-5 rounded-full border border-sky-300 flex items-center justify-center text-[9px] font-black text-white flex-shrink-0" style="background:${safeCssColor(avatar_color)}">${escapeHtml(initials || "??")}</span>`;
+}
+
+async function fetchRechargeRequests() {
+    const list = document.getElementById("admin-recharge-list");
+    if (!list) return;
+    try {
+        const res = await fetch("/api/v1/admin/recharge-requests");
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            list.innerHTML = `<div class="p-4 bg-rose-50 text-rose-700 rounded-xl border border-rose-200">Lỗi: ${escapeHtml(err.detail || "Không thể tải yêu cầu nạp điểm")}</div>`;
+            return;
+        }
+        rechargeCache = await res.json();
+        renderRechargeRequests(rechargeCache);
+    } catch (err) {
+        console.error(err);
+        list.innerHTML = `<div class="p-4 bg-rose-50 text-rose-700 rounded-xl border border-rose-200">Đã xảy ra lỗi kết nối.</div>`;
+    }
+}
+
+function renderRechargeRequests(requests) {
+    const list = document.getElementById("admin-recharge-list");
+    if (!list) return;
+    if (!requests.length) {
+        list.innerHTML = `<div class="text-center text-slate-500 py-6">Không có yêu cầu nạp điểm.</div>`;
+        return;
+    }
+
+    list.innerHTML = requests.map(item => {
+        const user = item.user || {};
+        const isPending = item.status === "pending";
+        const badge = isPending
+            ? `<span class="text-xs px-2 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">Đang chờ</span>`
+            : `<span class="text-xs px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">Đã xác nhận</span>`;
+        const createdAt = new Date(item.created_at).toLocaleString("vi-VN", {
+            hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric"
+        });
+        const displayName = user.display_name || user.email || "User";
+        const email = user.email || "";
+        return `
+            <div class="bg-white p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm">
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        ${renderMiniAvatar(user)}
+                        <span class="font-bold text-slate-900 truncate">${escapeHtml(displayName)}</span>
+                        ${badge}
+                    </div>
+                    <div class="text-xs text-slate-500 truncate">${escapeHtml(email)} · #${item.id} · ${escapeHtml(createdAt)}</div>
+                </div>
+                <div class="flex items-center justify-between md:justify-end gap-3">
+                    <div class="text-right">
+                        <div class="text-lg font-black text-[#D3af37]">${Number(item.amount).toLocaleString()} điểm</div>
+                        <div class="text-xs text-slate-500">Số dư: ${Number(user.total_points || 0).toLocaleString()}</div>
+                    </div>
+                    <button onclick="approveRechargeRequest(${item.id})" ${isPending ? "" : "disabled"}
+                        class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                        Xác nhận
+                    </button>
+                </div>
+            </div>`;
+    }).join("");
+}
+
+async function approveRechargeRequest(id) {
+    const request = rechargeCache.find(item => item.id === id);
+    if (!request || request.status !== "pending") return;
+    if (!confirm(`Xác nhận cộng ${Number(request.amount).toLocaleString()} điểm cho ${request.user?.email || "user"}?`)) return;
+
+    try {
+        const res = await fetch(`/api/v1/admin/recharge-requests/${id}/approve`, { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert(`Lỗi: ${data.detail || "Không thể xác nhận yêu cầu"}`);
+            return;
+        }
+        await fetchRechargeRequests();
+    } catch (err) {
+        console.error(err);
+        alert("Đã xảy ra lỗi hệ thống.");
+    }
 }
 
 function toDatetimeLocal(value) {

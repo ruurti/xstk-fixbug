@@ -146,6 +146,21 @@
             </div>
         </div>
 
+        <section class="bg-white border border-slate-200 rounded-2xl p-4 mb-6 shadow-sm">
+            <div class="flex items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-sm font-bold uppercase tracking-wide text-slate-500">Nạp / đổi điểm</h2>
+                    <p class="text-xs text-slate-500 mt-1">Yêu cầu nạp sẽ chờ admin xác nhận trước khi cộng điểm.</p>
+                </div>
+                <button id="open-recharge-modal" class="flex-shrink-0 bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
+                    Nạp điểm
+                </button>
+            </div>
+            <div id="recharge-list" class="mt-4 space-y-2">
+                <div class="animate-pulse bg-slate-50 h-14 rounded-xl border border-slate-100"></div>
+            </div>
+        </section>
+
         <!-- Stats Row -->
         <div class="grid grid-cols-3 gap-3 mb-6">
             <div class="stat-card text-center">
@@ -222,6 +237,34 @@
                     class="flex-1 py-2 rounded-xl bg-sky-600 text-white text-sm font-semibold
                            hover:bg-sky-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                     Lưu ảnh
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="recharge-modal" class="modal-backdrop" role="dialog" aria-label="Nạp điểm">
+        <div class="modal-box">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-bold text-slate-900 text-base">Nạp điểm</h3>
+                <button id="close-recharge-modal" class="text-slate-400 hover:text-slate-900 p-1">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <label class="block text-sm text-slate-500 mb-1.5">Số điểm muốn nạp</label>
+            <input type="number" id="recharge-amount" class="name-input" min="100" max="10000" step="100"
+                   placeholder="Từ 100 đến 10000" autocomplete="off">
+            <div class="text-xs text-slate-400 mt-2">Tối thiểu 100 điểm, tối đa 10000 điểm.</div>
+            <div id="recharge-error" class="hidden text-red-400 text-xs mt-2"></div>
+
+            <div class="flex gap-3 mt-4">
+                <button id="btn-recharge-cancel" class="flex-1 py-2 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 transition-colors">Hủy</button>
+                <button id="btn-recharge-save"
+                    class="flex-1 py-2 rounded-xl bg-sky-600 text-white text-sm font-semibold
+                           hover:bg-sky-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    Gửi yêu cầu
                 </button>
             </div>
         </div>

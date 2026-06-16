@@ -9,6 +9,10 @@ class MatchStatus(str, enum.Enum):
     live = "live"
     finished = "finished"
 
+class PointRechargeStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+
 AVATAR_COLORS = [
     "#6366f1", "#8b5cf6", "#ec4899", "#f43f5e",
     "#f97316", "#eab308", "#22c55e", "#14b8a6",
@@ -59,3 +63,14 @@ class Bet(Base):
     stake = Column(Integer, nullable=False)        # Số điểm đặt cược
     points_earned = Column(Integer, nullable=True, default=None)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class PointRechargeRequest(Base):
+    __tablename__ = "point_recharge_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    amount = Column(Integer, nullable=False)
+    status = Column(Enum(PointRechargeStatus), default=PointRechargeStatus.pending, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    approved_at = Column(DateTime, nullable=True)
+    approved_by_user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
