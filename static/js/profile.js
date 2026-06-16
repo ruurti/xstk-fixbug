@@ -458,7 +458,7 @@ function toggleDetail(betId) {
 async function fetchRechargeRequests() {
     const listEl = document.getElementById("recharge-list");
     if (!listEl) return;
-    if (!IS_OWN_PROFILE) {
+    if (_profileData?.can_edit === false) {
         const rechargeSection = document.getElementById("recharge-section");
         if (rechargeSection) rechargeSection.classList.add("hidden");
         return;

@@ -22,6 +22,8 @@ from pathlib import Path
 import csv
 import io
 from decimal import Decimal, ROUND_DOWN
+import html
+import re
 
 from app.database import engine, Base, get_db
 from app.models import Match, MatchStatus, Bet, User, PointRechargeRequest, PointRechargeStatus
@@ -61,6 +63,93 @@ OUTCOME_LABELS = {
 
 def _format_coins(value: int) -> str:
     return f"{int(value):,}d"
+
+
+def _render_inline_markdown(text: str) -> str:
+    escaped = html.escape(text)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"\*(.+?)\*", r"<em>\1</em>", escaped)
+    return escaped
+
+
+def render_markdown(md_text: str) -> str:
+    lines = md_text.splitlines()
+    parts: list[str] = []
+    list_items: list[str] = []
+
+    def flush_list() -> None:
+        nonlocal list_items
+        if list_items:
+            parts.append("<ul class=\"my-4 list-disc pl-6 space-y-2\">")
+            parts.extend(list_items)
+            parts.append("</ul>")
+            list_items = []
+
+    def flush_paragraph(paragraph_lines: list[str]) -> None:
+        if not paragraph_lines:
+            return
+        paragraph = " ".join(s.strip() for s in paragraph_lines).strip()
+        if paragraph:
+            parts.append(f"<p class=\"my-4\">{_render_inline_markdown(paragraph)}</p>")
+
+    paragraph_lines: list[str] = []
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        stripped = line.strip()
+
+        if not stripped:
+            flush_paragraph(paragraph_lines)
+            paragraph_lines = []
+            flush_list()
+            continue
+
+        heading_match = re.match(r"^(#{1,3})\s+(.*)$", stripped)
+        if heading_match:
+            flush_paragraph(paragraph_lines)
+            paragraph_lines = []
+            flush_list()
+            level = len(heading_match.group(1))
+            content = _render_inline_markdown(heading_match.group(2).strip())
+            heading_classes = {
+                1: "mt-0 mb-5 text-3xl md:text-4xl font-black leading-tight text-slate-950",
+                2: "mt-8 mb-4 text-2xl md:text-3xl font-black leading-tight text-slate-950",
+                3: "mt-6 mb-3 text-xl md:text-2xl font-extrabold leading-tight text-slate-950",
+            }
+            parts.append(f"<h{level} class=\"{heading_classes[level]}\">{content}</h{level}>")
+            continue
+
+        if stripped in {"---", "***", "___"}:
+            flush_paragraph(paragraph_lines)
+            paragraph_lines = []
+            flush_list()
+            parts.append("<hr class=\"my-6 border-slate-200\" />")
+            continue
+
+        list_match = re.match(r"^[*-]\s+(.*)$", stripped)
+        if list_match:
+            flush_paragraph(paragraph_lines)
+            paragraph_lines = []
+            item_html = _render_inline_markdown(list_match.group(1).strip())
+            list_items.append(f"<li class=\"leading-7\">{item_html}</li>")
+            continue
+
+        if stripped.startswith("1. "):
+            flush_paragraph(paragraph_lines)
+            paragraph_lines = []
+            flush_list()
+            parts.append(
+                f"<ol class=\"my-4 list-decimal pl-6 space-y-2\"><li class=\"leading-7\">{_render_inline_markdown(stripped[3:].strip())}</li></ol>"
+            )
+            continue
+
+        flush_list()
+        paragraph_lines.append(stripped)
+
+    flush_paragraph(paragraph_lines)
+    flush_list()
+    return "\n".join(parts)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "").strip()
@@ -230,6 +319,20 @@ async def read_home(request: Request):
     return templates.TemplateResponse(
         "index.html",
         {"request": request, "asset_version": ASSET_VERSION},
+        headers=NO_CACHE_HEADERS,
+    )
+
+@app.get("/guide", response_class=HTMLResponse)
+async def read_guide(request: Request):
+    guide_path = Path(__file__).resolve().parent.parent / "guide.md"
+    guide_markdown = guide_path.read_text(encoding="utf-8")
+    return templates.TemplateResponse(
+        "guide.html",
+        {
+            "request": request,
+            "asset_version": ASSET_VERSION,
+            "guide_html": render_markdown(guide_markdown),
+        },
         headers=NO_CACHE_HEADERS,
     )
 
@@ -481,7 +584,7 @@ async def create_recharge_request(
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-    await notify_admin_recharge_request(request.id, user, request.amount)
+    asyncio.create_task(notify_admin_recharge_request(request.id, user, request.amount))
     return {
         "message": "Yeu cau nap diem da duoc gui va dang cho admin xac nhan.",
         "request": _recharge_request_response(request),
