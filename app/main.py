@@ -498,7 +498,7 @@ async def get_match_bets(match_id: int, db: AsyncSession = Depends(get_db)):
 
 
 # ─── GET /api/v1/matches/{match_id}/detail — Chi tiết trận và đặt cược ───────
-@app.get("/api/v1/matches/{match_id}/detail")
+@app.get("/api/v1/matches/{match_id:int}/detail")
 async def get_match_detail(
     match_id: int,
     user: User = Depends(get_current_user),
