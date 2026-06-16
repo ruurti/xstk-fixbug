@@ -32,7 +32,7 @@ function safeCssColor(value) {
 }
 
 function formatCoins(value) {
-    return `${Number(value || 0).toLocaleString()}🪙`;
+    return `${Number(value || 0).toLocaleString()}d`;
 }
 
 function renderMiniAvatar({ avatar_url, avatar_color, initials }) {
@@ -50,7 +50,7 @@ async function fetchRechargeRequests() {
         const res = await fetch("/api/v1/admin/recharge-requests");
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            list.innerHTML = `<div class="p-4 bg-rose-50 text-rose-700 rounded-xl border border-rose-200">Lỗi: ${escapeHtml(err.detail || "Không thể tải yêu cầu nạp 🪙")}</div>`;
+            list.innerHTML = `<div class="p-4 bg-rose-50 text-rose-700 rounded-xl border border-rose-200">Lỗi: ${escapeHtml(err.detail || "Không thể tải yêu cầu nạp điểm")}</div>`;
             return;
         }
         rechargeCache = await res.json();
@@ -65,7 +65,7 @@ function renderRechargeRequests(requests) {
     const list = document.getElementById("admin-recharge-list");
     if (!list) return;
     if (!requests.length) {
-        list.innerHTML = `<div class="text-center text-slate-500 py-6">Không có yêu cầu nạp 🪙.</div>`;
+        list.innerHTML = `<div class="text-center text-slate-500 py-6">Không có yêu cầu nạp điểm.</div>`;
         return;
     }
 

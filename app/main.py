@@ -54,13 +54,13 @@ CHOICE_LABELS = {"HOME": "Chủ nhà", "DRAW": "Hòa", "AWAY": "Khách"}
 OUTCOME_LABELS = {
     "WIN": "Thắng",
     "LOSE": "Thua",
-    "REFUND": "Hoàn 🪙",
+    "REFUND": "Hoàn điểm",
     "PENDING": "Chờ kết quả",
 }
 
 
 def _format_coins(value: int) -> str:
-    return f"{int(value):,}🪙"
+    return f"{int(value):,}d"
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "").strip()
@@ -508,7 +508,7 @@ async def place_bet(
 
     # Validate balance
     if user.total_points < payload.stake:
-        raise HTTPException(status_code=400, detail="Số 🪙 không đủ.")
+        raise HTTPException(status_code=400, detail="Số điểm không đủ.")
 
     # Kiểm tra đã cược chưa (1 user / 1 match)
     existing = (await db.execute(
@@ -526,7 +526,7 @@ async def place_bet(
         )
         if balance_update.rowcount != 1:
             await db.rollback()
-            raise HTTPException(status_code=400, detail="Số 🪙 không đủ.")
+            raise HTTPException(status_code=400, detail="Số điểm không đủ.")
 
         bet = Bet(
             user_id=user.id,
@@ -863,7 +863,7 @@ def _format_reward_label(outcome: str, stake: int, points_earned: Optional[int])
     if outcome == "WIN":
         return f"+{_format_coins(int(points_earned or 0))}"
     if outcome == "LOSE":
-        return "0🪙"
+        return "0d"
     if outcome == "REFUND":
         return f"Hoàn {_format_coins(int(stake))}"
     return "Chờ kết quả"
@@ -883,7 +883,7 @@ def _build_detail_quote(
     winner_text = _choice_label(winning_choice)
     quote_bank = {
         "WIN": [
-            "{name} ôm đúng cửa {choice}. Hôm nay bảng 🪙 phải tự chỉnh lại thái độ.",
+            "{name} ôm đúng cửa {choice}. Hôm nay bảng điểm phải tự chỉnh lại thái độ.",
             "{name} chọn {choice} chuẩn như xem trước kết quả. Đám đông xin phép học theo.",
             "{name} vào kèo {choice} rất gọn. Trận này trực giác đã thắng tranh cãi.",
         ],
@@ -893,13 +893,13 @@ def _build_detail_quote(
             "{name} đi cửa {choice} hơi sớm một nhịp. Hôm nay trực giác xin nghỉ phép.",
         ],
         "REFUND": [
-            "{name} gặp kèo hoàn 🪙. Ít ra ví vẫn nguyên, tinh thần cũng đỡ đau.",
+            "{name} gặp kèo hoàn điểm. Ít ra ví vẫn nguyên, tinh thần cũng đỡ đau.",
             "{name} đi một vòng rồi quay lại vạch xuất phát. Trận này công bằng đến mức hơi buồn cười.",
-            "{name} không mất 🪙 nhưng cũng chưa kịp trêu ai. Kèo này đúng kiểu hòa cho tất cả.",
+            "{name} không mất điểm nhưng cũng chưa kịp trêu ai. Kèo này đúng kiểu hòa cho tất cả.",
         ],
         "PENDING": [
             "{name} đang chờ kèo nổ. Cửa {choice} mà lên tiếng thì câu chuyện sẽ vui hơn nhiều.",
-            "{name} đã vào cửa {choice}, giờ chỉ còn chờ bảng 🪙 quyết định phần hài hước.",
+            "{name} đã vào cửa {choice}, giờ chỉ còn chờ bảng điểm quyết định phần hài hước.",
             "{name} chọn {choice}, còn trận đấu thì giữ kịch tính khá lâu.",
         ],
     }

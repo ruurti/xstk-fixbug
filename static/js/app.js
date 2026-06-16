@@ -40,7 +40,7 @@ function safeCssColor(value) {
 }
 
 function formatCoins(value) {
-    return `${Number(value || 0).toLocaleString()}🪙`;
+    return `${Number(value || 0).toLocaleString()}d`;
 }
 
 function renderMiniAvatar({ avatar_url, avatar_color, initials }) {
@@ -156,7 +156,7 @@ function renderUserInfo() {
             ${renderMiniAvatar(currentUser)}
             <span class="font-semibold text-slate-900 truncate max-w-[8rem]">${escapeHtml(displayName)}</span>
             <span class="text-slate-300">|</span>
-            <span class="text-[#D3af37] font-bold" id="user-points">${currentUser.total_points.toLocaleString()}</span><span class="text-[#D3af37]">🪙</span>
+            <span class="text-[#D3af37] font-bold" id="user-points">${currentUser.total_points.toLocaleString()}</span><span class="text-[#D3af37]">d</span>
         </span>`;
 
     document.getElementById("admin-header-link")?.classList.toggle("hidden", !currentUser.is_admin);
@@ -390,7 +390,7 @@ function renderLatestFinishedMatch(detail) {
     const pool = detail.pool || {};
     const totalPool = Number(pool.total_pool || 0);
     const winnerText = settlement.refunded
-        ? "Hoàn 🪙"
+        ? "Hoàn điểm"
         : choiceLabel(settlement.winning_choice);
     const scoreText = settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`;
     const adjustedText = settlement.adjusted_score ? `Sau kèo ${settlement.adjusted_score}` : "Sau kèo --";
@@ -408,7 +408,7 @@ function renderLatestFinishedMatch(detail) {
                 </div>
             <div class="flex items-center gap-2 flex-wrap justify-end">
                 <span class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${settlement.refunded ? "border-amber-200 bg-amber-50 text-amber-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}">
-                    ${escapeHtml(settlement.refunded ? "Hoàn 🪙" : `Cửa thắng: ${winnerText}`)}
+                    ${escapeHtml(settlement.refunded ? "Hoàn điểm" : `Cửa thắng: ${winnerText}`)}
                 </span>
                     <button type="button" onclick="openMatchDetail(${match.id}, true)" class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition-colors">
                         🔎Chi tiết
@@ -420,7 +420,7 @@ function renderLatestFinishedMatch(detail) {
                 ${summaryTile("Tổng quỹ", formatCoins(totalPool), "text-[#D3af37]")}
                 ${summaryTile("Người thắng", String(winnerCount), "text-emerald-600")}
                 ${summaryTile("Người thua", String(loserCount), "text-rose-600")}
-                ${summaryTile(settlement.refunded ? "Hoàn 🪙" : "Cửa thắng", settlement.refunded ? String(refundCount) : winnerText, "text-[#D3af37]")}
+                ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(refundCount) : winnerText, "text-[#D3af37]")}
             </div>
 
             <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -459,14 +459,14 @@ function renderStakePanel(matchId, choice, totalPool, stakesOnChoice) {
     if (maxStake < MIN_STAKE) {
         panel.innerHTML = `
             <div class="stake-panel">
-                <label>Số 🪙 đặt cược</label>
-                <div class="text-sm text-rose-600 mt-2">Bạn cần tối thiểu ${MIN_STAKE.toLocaleString()}🪙 để đặt cược. Hiện tại bạn đang có ${formatCoins(maxStake)}.</div>
+                <label>Số điểm đặt cược</label>
+                <div class="text-sm text-rose-600 mt-2">Bạn cần tối thiểu ${MIN_STAKE.toLocaleString()}d để đặt cược. Hiện tại bạn đang có ${formatCoins(maxStake)}.</div>
             </div>`;
         return;
     }
     panel.innerHTML = `
         <div class="stake-panel">
-            <label>Số 🪙 đặt cược</label>
+            <label>Số điểm đặt cược</label>
             <div class="flex items-center gap-3 mt-2">
                 <input type="range" class="stake-slider flex-1"
                     id="slider-${matchId}"
@@ -503,9 +503,9 @@ window.confirmBet = async function(matchId) {
     if (!sel) return;
 
     const stakeVal = parseInt(document.getElementById(`input-${matchId}`).value) || 0;
-    if (stakeVal < MIN_STAKE) { showToast(`Số 🪙 tối thiểu là ${MIN_STAKE}.`, "error"); return; }
+    if (stakeVal < MIN_STAKE) { showToast(`Số điểm tối thiểu là ${MIN_STAKE}.`, "error"); return; }
     if (currentUser && stakeVal > currentUser.total_points) {
-        showToast("Số 🪙 không đủ.", "error"); return;
+        showToast("Số điểm không đủ.", "error"); return;
     }
 
     const btn = document.getElementById(`confirm-btn-${matchId}`);
@@ -633,7 +633,7 @@ function renderMatchDetail(detail) {
                 ${summaryTile("Kết quả", settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`, "text-[#D3af37]")}
                 ${summaryTile("Sau kèo", settlement.adjusted_score || "--", "text-[#D3af37]")}
                 ${summaryTile("Người thắng", String(Number(settlement.winner_count || 0)), "text-[#D3af37]")}
-                ${summaryTile(settlement.refunded ? "Hoàn 🪙" : "Cửa thắng", settlement.refunded ? String(Number(settlement.refund_count || 0)) : choiceLabel(settlement.winning_choice), "text-[#D3af37]")}
+                ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(Number(settlement.refund_count || 0)) : choiceLabel(settlement.winning_choice), "text-[#D3af37]")}
             </div>
         ` : ""}
 
@@ -650,8 +650,8 @@ function renderMatchDetail(detail) {
                     <div class="text-sm font-semibold text-slate-900">${myBet ? choiceLabel(myBet.choice) : "Chưa vào cửa"}</div>
                 </div>
                 <div class="text-right">
-                    <div class="text-xs text-slate-500">🪙 đã vào</div>
-                    <div class="text-lg font-black text-[#D3af37]">${myBet ? formatCoins(myBet.stake) : "0🪙"}</div>
+                    <div class="text-xs text-slate-500">điểm đã vào</div>
+                    <div class="text-lg font-black text-[#D3af37]">${myBet ? formatCoins(myBet.stake) : "0d"}</div>
                     ${myBet ? `<div class="text-[11px] text-[#D3af37]">${escapeHtml(myBet.reward_label || myBet.outcome_label || "")}</div>` : ""}
                 </div>
             </div>
@@ -705,7 +705,7 @@ function getChoiceState(choiceKey, settlement) {
     }
     if (settlement.refunded) {
         return {
-            label: "Hoàn 🪙",
+            label: "Hoàn điểm",
             badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
         };
     }
