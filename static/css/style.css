@@ -39,7 +39,7 @@ button, a, .clickable-card { -webkit-tap-highlight-color: transparent; }
 .bet-btn:active { transform: scale(0.97); }
 .bet-btn .bet-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .bet-btn .bet-odds,
-.bet-btn .bet-payout { font-size: 0.85rem; font-weight: 800; color: #0f766e; }
+.bet-btn .bet-payout { font-size: 0.85rem; font-weight: 800; color: #D3af37; }
 
 .bet-btn.selected {
     border-color: #0ea5e9;
@@ -48,7 +48,7 @@ button, a, .clickable-card { -webkit-tap-highlight-color: transparent; }
     box-shadow: 0 0 12px rgba(14, 165, 233, 0.18);
 }
 .bet-btn.selected .bet-odds,
-.bet-btn.selected .bet-payout { color: #0284c7; }
+.bet-btn.selected .bet-payout { color: #D3af37; }
 
 .stake-panel {
     margin-top: 10px;
@@ -385,7 +385,7 @@ button, a, .clickable-card { -webkit-tap-highlight-color: transparent; }
 .lb-score {
     font-size: 0.85rem;
     font-weight: 800;
-    color: #0f766e;
+    color: #D3af37;
 }
 
 .lb-trend {

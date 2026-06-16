@@ -60,7 +60,7 @@ function applyProfileUI(data) {
     document.getElementById("user-info").innerHTML =
         `${headerAvatarHtml(data)}
          <span class="font-semibold text-slate-900">${safeShortName}</span>
-         &nbsp;|&nbsp; 🪙 <span class="text-sky-600 font-bold">${data.total_points.toLocaleString()}</span>đ`;
+         &nbsp;|&nbsp; 🪙 <span class="text-[#D3af37] font-bold">${data.total_points.toLocaleString()}</span>đ`;
 
     renderAvatar(data);
 }
@@ -347,7 +347,7 @@ function renderBets(bets, listEl) {
                         <span>Chọn:</span>
                         <span class="font-medium text-slate-700">${choiceLabel}</span>
                         <span class="text-slate-300">•</span>
-                        <span class="text-sky-600 font-semibold">${b.stake.toLocaleString()} điểm</span>
+                        <span class="text-[#D3af37] font-semibold">${b.stake.toLocaleString()} điểm</span>
                     </div>
                 </div>
                 <div class="flex flex-col items-end gap-1 flex-shrink-0">
@@ -380,12 +380,12 @@ function renderDetail(b) {
     const resultHtml = isFinished
         ? isRefunded
             ? `<div class="flex justify-between"><span class="text-slate-500">Kết quả</span>
-               <span class="font-semibold text-sky-600">Hoàn ${b.stake.toLocaleString()} điểm</span></div>`
+               <span class="font-semibold text-[#D3af37]">Hoàn ${b.stake.toLocaleString()} điểm</span></div>`
             : isWin
             ? `<div class="flex justify-between"><span class="text-slate-500">Điểm nhận về</span>
-               <span class="font-black text-emerald-600 text-base">+${b.points_earned.toLocaleString()} điểm</span></div>`
+               <span class="font-black text-[#D3af37] text-base">+${b.points_earned.toLocaleString()} điểm</span></div>`
             : `<div class="flex justify-between"><span class="text-slate-500">Kết quả</span>
-               <span class="font-semibold text-rose-600">Mất ${b.stake.toLocaleString()} điểm</span></div>`
+               <span class="font-semibold text-[#D3af37]">Mất ${b.stake.toLocaleString()} điểm</span></div>`
         : `<div class="flex justify-between"><span class="text-slate-500">Kết quả</span>
            <span class="text-indigo-600 font-semibold">Đang chờ kết quả...</span></div>`;
 
@@ -394,7 +394,7 @@ function renderDetail(b) {
         <div class="flex justify-between"><span class="text-slate-500">Kèo chấp</span><span class="text-slate-700">${hcSign}${b.handicap}</span></div>
         ${isFinished ? `<div class="flex justify-between"><span class="text-slate-500">Tỉ số</span><span class="font-bold text-slate-900">${b.home_score} - ${b.away_score}</span></div>` : ""}
         <div class="flex justify-between"><span class="text-slate-500">Lựa chọn</span><span class="font-semibold text-sky-700">${choiceLabel}</span></div>
-        <div class="flex justify-between"><span class="text-slate-500">Số điểm đặt</span><span class="text-sky-600 font-semibold">${b.stake.toLocaleString()} điểm</span></div>
+        <div class="flex justify-between"><span class="text-slate-500">Số điểm đặt</span><span class="text-[#D3af37] font-semibold">${b.stake.toLocaleString()} điểm</span></div>
         <div class="border-t border-slate-200 pt-2 mt-2">${resultHtml}</div>
         <div class="text-xs text-slate-400 pt-1">🗓 Trận: ${fmt(b.start_time)} &nbsp;•&nbsp; ⏱ Đặt: ${fmt(b.created_at)}</div>
     </div>`;

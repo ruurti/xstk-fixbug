@@ -151,7 +151,7 @@ function renderUserInfo() {
             ${renderMiniAvatar(currentUser)}
             <span class="font-semibold text-slate-900 truncate max-w-[8rem]">${escapeHtml(displayName)}</span>
             <span class="text-slate-300">|</span>
-            <span class="text-sky-600 font-bold" id="user-points">${currentUser.total_points.toLocaleString()}</span><span class="text-sky-600">đ</span>
+            <span class="text-[#D3af37] font-bold" id="user-points">${currentUser.total_points.toLocaleString()}</span><span class="text-[#D3af37]">🪙</span>
         </span>`;
 
     document.getElementById("admin-header-link")?.classList.toggle("hidden", !currentUser.is_admin);
@@ -323,7 +323,7 @@ function renderMatchCard(match) {
             </div>
 
             <div class="text-center text-xs text-slate-500 mb-1">
-                Pool: <span class="text-sky-600 font-semibold">${total_pool.toLocaleString()}đ</span>
+                Pool: <span class="text-[#D3af37] font-semibold">${total_pool.toLocaleString()}đ</span>
             </div>
 
             ${betArea}
@@ -415,23 +415,20 @@ function renderLatestFinishedMatch(detail) {
                         ${escapeHtml(settlement.refunded ? "Hoàn điểm" : `Cửa thắng: ${winnerText}`)}
                     </span>
                     <button type="button" onclick="openMatchDetail(${match.id}, true)" class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12H3m0 0l4-4m-4 4l4 4m18 0h-6"/>
-                        </svg>
-                        Chi tiết
+                        🔎Chi tiết
                     </button>
                 </div>
             </div>
 
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                ${summaryTile("Tổng quỹ", `${totalPool.toLocaleString()}đ`, "text-amber-600")}
+                ${summaryTile("Tổng quỹ", `${totalPool.toLocaleString()}đ`, "text-[#D3af37]")}
                 ${summaryTile("Người thắng", String(winnerCount), "text-emerald-600")}
                 ${summaryTile("Người thua", String(loserCount), "text-rose-600")}
-                ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(refundCount) : winnerText, "text-sky-600")}
+                ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(refundCount) : winnerText, "text-[#D3af37]")}
             </div>
 
             <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <div class="text-[11px] uppercase tracking-wide text-amber-700">Khịa nhanh</div>
+                <div class="text-[11px] uppercase tracking-wide text-amber-700">Ý kiến của chuyên gia</div>
                 <div class="mt-2 text-sm leading-relaxed text-amber-900 italic">${escapeHtml(settlement.headline_quote || getQuoteByDetail(detail))}</div>
             </div>
         </div>`;
@@ -621,18 +618,18 @@ function renderMatchDetail(detail) {
 
     body.innerHTML = `
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-            ${summaryTile("Tổng quỹ", `${totalPool.toLocaleString()}đ`, "text-amber-600")}
-            ${summaryTile("Chủ nhà", `${choiceStats[0].stake.toLocaleString()}đ`, "text-emerald-600")}
-            ${summaryTile("Hòa", `${choiceStats[1].stake.toLocaleString()}đ`, "text-sky-600")}
-            ${summaryTile("Khách", `${choiceStats[2].stake.toLocaleString()}đ`, "text-pink-600")}
+            ${summaryTile("Tổng quỹ", `${totalPool.toLocaleString()}đ`, "text-[#D3af37]")}
+            ${summaryTile("Chủ nhà", `${choiceStats[0].stake.toLocaleString()}đ`, "text-[#D3af37]")}
+            ${summaryTile("Hòa", `${choiceStats[1].stake.toLocaleString()}đ`, "text-[#D3af37]")}
+            ${summaryTile("Khách", `${choiceStats[2].stake.toLocaleString()}đ`, "text-[#D3af37]")}
         </div>
 
         ${settlement.is_finished ? `
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                ${summaryTile("Kết quả", settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`, "text-slate-900")}
-                ${summaryTile("Sau kèo", settlement.adjusted_score || "--", "text-indigo-600")}
-                ${summaryTile("Người thắng", String(Number(settlement.winner_count || 0)), "text-emerald-600")}
-                ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(Number(settlement.refund_count || 0)) : choiceLabel(settlement.winning_choice), "text-sky-600")}
+                ${summaryTile("Kết quả", settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`, "text-[#D3af37]")}
+                ${summaryTile("Sau kèo", settlement.adjusted_score || "--", "text-[#D3af37]")}
+                ${summaryTile("Người thắng", String(Number(settlement.winner_count || 0)), "text-[#D3af37]")}
+                ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(Number(settlement.refund_count || 0)) : choiceLabel(settlement.winning_choice), "text-[#D3af37]")}
             </div>
         ` : ""}
 
@@ -650,8 +647,8 @@ function renderMatchDetail(detail) {
                 </div>
                 <div class="text-right">
                     <div class="text-xs text-slate-500">Điểm đã vào</div>
-                    <div class="text-lg font-black text-sky-600">${myBet ? `${Number(myBet.stake).toLocaleString()}đ` : "0đ"}</div>
-                    ${myBet ? `<div class="text-[11px] text-slate-500">${escapeHtml(myBet.reward_label || myBet.outcome_label || "")}</div>` : ""}
+                    <div class="text-lg font-black text-[#D3af37]">${myBet ? `${Number(myBet.stake).toLocaleString()}đ` : "0đ"}</div>
+                    ${myBet ? `<div class="text-[11px] text-[#D3af37]">${escapeHtml(myBet.reward_label || myBet.outcome_label || "")}</div>` : ""}
                 </div>
             </div>
             ${myBet ? `<div class="text-xs text-slate-500">${escapeHtml(myBet.quote || "Vào đúng cửa thì uống trà, vào lệch cửa thì ngồi ngẫm đời.")}</div>` : `<div class="text-xs text-slate-500">Chưa đặt cược vẫn xem được quỹ và danh sách để cân nhắc cửa vào.</div>`}
@@ -680,7 +677,7 @@ function renderChoiceColumn(choiceStat, pct, settlement) {
                 <div class="text-right">
                     <div class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${state.badgeClass}">${escapeHtml(state.label)}</div>
                     <div class="text-xs text-slate-500">Tỷ trọng</div>
-                    <div class="text-sm font-black text-sky-600">${pct.toFixed(1)}%</div>
+                    <div class="text-sm font-black text-[#D3af37]">${pct.toFixed(1)}%</div>
                 </div>
             </div>
             <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
@@ -757,8 +754,8 @@ function renderBettorList(list) {
                     ${quote}
                 </div>
                 <div class="text-right shrink-0">
-                    <div class="text-sm font-black text-sky-600">${Number(bettor.stake).toLocaleString()}đ</div>
-                    <div class="text-[11px] text-slate-500">${rewardText}</div>
+                    <div class="text-sm font-black text-[#D3af37]">${Number(bettor.stake).toLocaleString()}đ</div>
+                    <div class="text-[11px] text-[#D3af37]">${rewardText}</div>
                 </div>
                 ${wolfBadge}
             </div>`;

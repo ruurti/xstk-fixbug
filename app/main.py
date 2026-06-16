@@ -808,6 +808,14 @@ def _build_headline_quote(
                     "Kèo này hoàn điểm, nên ai cũng rời bàn với vẻ mặt khá lịch sự.",
                     "Trận đã xong nhưng không cửa nào đủ lực để giữ lại màn khịa dài lâu.",
                     "Không ai ăn đủ, thế là cuộc vui tạm dừng trong thế cân bằng hơi buồn cười.",
+                    "Tưởng thế nào, đá hùng hục 90 phút xong trả lại tiền. Quần áo ai nấy mặc, nhà ai nấy về.",
+                    "Cả làng huề vốn! Những kẻ mạnh miệng nhất trước giờ lăn bóng nay bỗng trở nên hiền lành lạ thường.",
+                    "Một trận cầu tốn calo của cầu thủ và tốn cả thanh xuân của người xem. Chốt lại: Huề tiền!",
+                    "Hệ thống trả lại tiền đây, anh em cất đi mai chơi tiếp, nay chưa ai đủ tư cách gáy đâu.",
+                    "Điểm về lại ví, tình anh em chưa rạn nứt. Hôm nay vũ trụ độ cho cả nhóm khỏi mất tiền đấy.",
+                    "Nhìn bảng điểm im lìm mà thấy thương. Chuẩn bị văn mẫu khịa nhau cả ngày xong cuối cùng phải xóa vội.",
+                    "Tiền vẫn trong túi, đồng nghiệp vẫn nhìn mặt nhau. Một cái kết nhạt nhẽo nhưng an toàn!",
+                    "Hòa cả làng! Thôi anh em thu dọn hiện trường, nay không có ai ra đê cũng chẳng ai lên đỉnh."
                 ],
                 f"{match.id}:refund",
             )
@@ -819,6 +827,15 @@ def _build_headline_quote(
                 "{winner} đã lên tiếng. Người ôm đúng cửa hôm nay nói ít nhưng cười nhiều.",
                 "Kết quả ngả về {winner}. Bên kia chỉ còn cách tự an ủi bằng kinh nghiệm.",
                 "{winner} thắng trận này, và đám đông vừa học thêm một bài về niềm tin.",
+                "Chúc mừng các cổ đông {winner}. Nhận tiền đi kìa, tiền lấy từ túi anh em tiêu lúc nào cũng sướng.",
+                "{winner} chốt hạ! Những ai nằm cửa này xin phép được gáy to từ giờ đến sáng mai.",
+                "Hệ thống đang chuyển tiền từ những trái tim tan vỡ sang cho fan {winner}. Đề nghị bên thua không khóc.",
+                "90 phút bão táp kết thúc với chiến thắng cho {winner}. Mấy anh nằm cửa ngược chắc đang lẳng lặng xóa văn mẫu.",
+                "Ánh sáng chân lý hôm nay gọi tên {winner}. Bên kia đá xước cả móng chân cũng không gánh nổi sổ đỏ của anh em.",
+                "Tiếng thở dài của đám đông làm nền cho nụ cười của người chọn {winner}. Bóng đá mà, cay lắm!",
+                "{winner} mang tiền về cho mẹ, còn đội bạn thì mang nợ về cho anh em.",
+                "Ai bảo cờ bạc là may rủi? Nhìn mấy anh trúng quả {winner} kìa, toàn 'phân tích chiến thuật' cả đấy!",
+                "Quyết định thuộc về {winner}. Người ăn thì vỗ đùi đen đét, kẻ thua thì lại bắt đầu bài ca đổ tại VAR."
             ],
             f"{match.id}:{winner_choice}",
         ).format(
