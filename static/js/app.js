@@ -1067,8 +1067,7 @@ function renderMatchCard(match) {
             <div class="flex items-center justify-between mb-2">
                 <div class="flex items-center gap-2">
                     ${liveBadge}
-                    <span class="text-xs bg-sky-50 text-sky-700 font-mono font-semibold px-2 py-1 rounded border border-sky-100">⏰ ${timeStr}</span>
-                    <span class="text-xs bg-rose-50 text-rose-700 font-mono font-semibold px-2 py-1 rounded border border-rose-100">Ket thuc ${endTimeStr}</span>
+                    <span class="text-xs bg-sky-50 text-sky-700 font-mono font-semibold px-2 py-1 rounded border border-sky-100">⏰ ${timeStr} - ${endTimeStr}</span>
                 </div>
                 <button type="button"
                     class="inline-flex items-center gap-1 text-xs bg-white text-slate-600 border border-slate-200 hover:border-sky-300 hover:text-sky-700 px-2.5 py-1 rounded-full transition-colors shadow-sm"
@@ -1077,7 +1076,7 @@ function renderMatchCard(match) {
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M11 16h2M12 8v4m0 8a8 8 0 100-16 8 8 0 000 16z"/>
                     </svg>
-                    <span>Chi tiet</span>
+                    <span>Chi tiết</span>
                 </button>
             </div>
 
