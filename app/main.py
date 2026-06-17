@@ -643,7 +643,7 @@ async def create_recharge_request(
     }
 
 
-# GET /api/v1/matches — Danh sách upcoming kèm pool stats per match
+# GET /api/v1/matches — Danh sách trận đang mở kèo (upcoming + live)
 @app.get("/api/v1/matches")
 async def get_upcoming_matches(db: AsyncSession = Depends(get_db)):
     # Subquery: tổng stake theo (match_id, choice)
@@ -668,8 +668,8 @@ async def get_upcoming_matches(db: AsyncSession = Depends(get_db)):
             func.coalesce(pool_q.c.total_pool, 0).label("total_pool"),
         )
         .outerjoin(pool_q, Match.id == pool_q.c.match_id)
-        .where(Match.status == MatchStatus.upcoming)
-        .order_by(Match.start_time.asc())
+        .where(Match.status != MatchStatus.finished)
+        .order_by(case((Match.status == MatchStatus.live, 0), else_=1), Match.start_time.asc())
     )
 
     rows = (await db.execute(query)).all()

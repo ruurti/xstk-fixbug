@@ -523,17 +523,21 @@ function renderMatches() {
 
     list.innerHTML = state.matches.map(match => {
         const isFinished = match.status === "finished";
+        const isLive = match.status === "live";
         const homeIconSrc = safeImageSrc(match.home_icon);
         const awayIconSrc = safeImageSrc(match.away_icon);
         const homeIconHtml = homeIconSrc ? `<img src="${homeIconSrc}" class="h-7 w-7 rounded-full border border-slate-700 object-cover" alt="">` : "";
         const awayIconHtml = awayIconSrc ? `<img src="${awayIconSrc}" class="h-7 w-7 rounded-full border border-slate-700 object-cover" alt="">` : "";
+        const statusBadge = isLive
+            ? `<span class="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-rose-200"><span class="h-2 w-2 rounded-full bg-rose-400 animate-pulse"></span>LIVE</span>`
+            : `<span class="rounded-full border px-3 py-1 ${isFinished ? "border-slate-700 bg-slate-900 text-slate-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}">${escapeHtml(match.status)}</span>`;
 
         return `
             <article class="rounded-2xl border border-slate-800 bg-slate-950/55 p-5">
                 <div class="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
                     <div class="min-w-0 flex-1">
                         <div class="mb-4 flex flex-wrap items-center gap-2 text-xs">
-                            <span class="rounded-full border px-3 py-1 ${isFinished ? "border-slate-700 bg-slate-900 text-slate-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}">${escapeHtml(match.status)}</span>
+                            ${statusBadge}
                             <span class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-400">ID ${match.id}</span>
                             <span class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-400">Kèo ${escapeHtml(match.handicap)}</span>
                             <span class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-400">${escapeHtml(formatDateTime(match.start_time))}</span>

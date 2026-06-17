@@ -82,6 +82,10 @@ function choiceLabel(choice) {
     return { HOME: "Chủ nhà", DRAW: "Hòa", AWAY: "Khách" }[choice] || choice;
 }
 
+function isLiveMatch(match) {
+    return String(match?.status || "").toLowerCase() === "live";
+}
+
 function formatVNDateTime(value) {
     if (!value) return "—";
     const date = new Date(value);
@@ -189,7 +193,7 @@ async function fetchUpcomingMatches() {
         const matches = await res.json();
 
         if (!matches.length) {
-            listEl.innerHTML = `<div class="text-center py-12 text-slate-500 text-sm">Hiện chưa có trận đấu nào sắp diễn ra.</div>`;
+            listEl.innerHTML = `<div class="text-center py-12 text-slate-500 text-sm">Hiện chưa có trận đấu nào đang mở cược.</div>`;
             return;
         }
 
@@ -259,6 +263,9 @@ async function fetchLatestFinishedMatch() {
 function renderMatchCard(match) {
     const timeStr = new Date(match.start_time).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
     const { id, home_team, home_icon, away_team, away_icon, handicap, stakes_home, stakes_draw, stakes_away, total_pool } = match;
+    const status = String(match.status || "upcoming");
+    const isLive = isLiveMatch(match);
+    const canBet = status === "upcoming";
     const homeTeam = escapeHtml(home_team);
     const awayTeam = escapeHtml(away_team);
     const homeIconSrc = safeImageSrc(home_icon);
@@ -273,22 +280,28 @@ function renderMatchCard(match) {
 
     const betArea = placedBets.has(id)
         ? `<div class="bet-placed-badge">✅ Đã đặt cược cho trận này</div>`
+        : !canBet
+        ? `
+            <div class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700 flex items-center gap-2">
+                <span class="inline-flex h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                <span>Trận đang diễn ra, tạm khóa đặt cược.</span>
+            </div>`
         : `
             <div class="bet-btn-group" id="btn-group-${id}">
                 <div class="bet-choice-block">
-                    <button class="bet-btn w-full" id="bet-home-${id}" onclick="selectChoice(${id}, 'HOME', ${total_pool}, ${stakes_home})">
+                    <button class="bet-btn w-full" id="bet-home-${id}" onclick="selectChoice(${id}, 'HOME', ${total_pool}, ${stakes_home}, '${status}')">
                         <span class="bet-label">Nhà</span>
                     </button>
                     <div class="avatar-stack-row" id="avatars-home-${id}"></div>
                 </div>
                 <div class="bet-choice-block">
-                    <button class="bet-btn w-full" id="bet-draw-${id}" onclick="selectChoice(${id}, 'DRAW', ${total_pool}, ${stakes_draw})">
+                    <button class="bet-btn w-full" id="bet-draw-${id}" onclick="selectChoice(${id}, 'DRAW', ${total_pool}, ${stakes_draw}, '${status}')">
                         <span class="bet-label">Hòa</span>
                     </button>
                     <div class="avatar-stack-row" id="avatars-draw-${id}"></div>
                 </div>
                 <div class="bet-choice-block">
-                    <button class="bet-btn w-full" id="bet-away-${id}" onclick="selectChoice(${id}, 'AWAY', ${total_pool}, ${stakes_away})">
+                    <button class="bet-btn w-full" id="bet-away-${id}" onclick="selectChoice(${id}, 'AWAY', ${total_pool}, ${stakes_away}, '${status}')">
                         <span class="bet-label">Khách</span>
                     </button>
                     <div class="avatar-stack-row" id="avatars-away-${id}"></div>
@@ -298,11 +311,19 @@ function renderMatchCard(match) {
 
     const homeIconHtml = homeIconSrc ? `<img src="${homeIconSrc}" class="w-6 h-6 inline-block mr-2 rounded-full border border-slate-200 bg-white">` : '';
     const awayIconHtml = awayIconSrc ? `<img src="${awayIconSrc}" class="w-6 h-6 inline-block ml-2 rounded-full border border-slate-200 bg-white">` : '';
+    const liveBadge = isLive ? `
+        <span class="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-600">
+            <span class="h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
+            LIVE
+        </span>` : "";
 
     return `
         <div class="bg-white border border-slate-200 hover:border-sky-300 rounded-xl p-4 shadow-sm transition duration-200 mb-3 last:mb-0">
             <div class="flex items-center justify-between mb-2">
-                <span class="text-xs bg-sky-50 text-sky-700 font-mono font-semibold px-2 py-1 rounded border border-sky-100">⏰ ${timeStr}</span>
+                <div class="flex items-center gap-2">
+                    ${liveBadge}
+                    <span class="text-xs bg-sky-50 text-sky-700 font-mono font-semibold px-2 py-1 rounded border border-sky-100">⏰ ${timeStr}</span>
+                </div>
                 <button type="button"
                     class="inline-flex items-center gap-1 text-xs bg-white text-slate-600 border border-slate-200 hover:border-sky-300 hover:text-sky-700 px-2.5 py-1 rounded-full transition-colors shadow-sm"
                     onclick="openMatchDetail(${id})"
@@ -444,8 +465,13 @@ function renderLatestFinishedMatch(detail) {
 // ─── 6. Chọn lựa (HOME / DRAW / AWAY) ────────────────────────────────────────
 const matchSelections = {};  // { matchId: { choice, totalPool, stakesOnChoice } }
 
-window.selectChoice = function(matchId, choice, totalPool, stakesOnChoice) {
-    matchSelections[matchId] = { choice, totalPool, stakesOnChoice };
+window.selectChoice = function(matchId, choice, totalPool, stakesOnChoice, matchStatus = "upcoming") {
+    if (String(matchStatus).toLowerCase() !== "upcoming") {
+        showToast("Trận đang diễn ra, tạm khóa đặt cược.", "error");
+        return;
+    }
+
+    matchSelections[matchId] = { choice, totalPool, stakesOnChoice, status: matchStatus };
 
     // Highlight button được chọn
     ["HOME", "DRAW", "AWAY"].forEach(c => {
@@ -461,6 +487,19 @@ window.selectChoice = function(matchId, choice, totalPool, stakesOnChoice) {
 // ─── 7. Stake Panel ───────────────────────────────────────────────────────────
 function renderStakePanel(matchId, choice, totalPool, stakesOnChoice) {
     const panel = document.getElementById(`stake-panel-${matchId}`);
+    const matchStatus = matchSelections[matchId]?.status || "upcoming";
+    if (String(matchStatus).toLowerCase() !== "upcoming") {
+        panel.classList.remove("hidden");
+        panel.innerHTML = `
+            <div class="stake-panel border border-rose-200 bg-rose-50">
+                <label>Đặt cược</label>
+                <div class="text-sm text-rose-600 mt-2 flex items-center gap-2">
+                    <span class="inline-flex h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                    <span>Trận đang diễn ra, tạm khóa đặt cược.</span>
+                </div>
+            </div>`;
+        return;
+    }
     const maxStake = currentUser ? currentUser.total_points : 1000;
     const defaultStake = Math.min(MIN_STAKE, maxStake);
     const defaultReward = estimateReward(totalPool, stakesOnChoice, defaultStake);
@@ -511,6 +550,10 @@ window.syncStake = function(matchId, totalPool, stakesOnChoice, rawVal) {
 window.confirmBet = async function(matchId) {
     const sel = matchSelections[matchId];
     if (!sel) return;
+    if (String(sel.status || "upcoming").toLowerCase() !== "upcoming") {
+        showToast("Trận đang diễn ra, tạm khóa đặt cược.", "error");
+        return;
+    }
 
     const stakeVal = parseInt(document.getElementById(`input-${matchId}`).value) || 0;
     if (stakeVal < MIN_STAKE) { showToast(`Số điểm tối thiểu là ${MIN_STAKE}.`, "error"); return; }
