@@ -813,7 +813,7 @@ async def place_bet(
     if not match:
         raise HTTPException(status_code=404, detail="Trận đấu không tồn tại.")
     if match.status != MatchStatus.upcoming:
-        raise HTTPException(status_code=400, detail="Trận đấu không còn nhận cược.")
+        raise HTTPException(status_code=400, detail="Trận này đã lên thớt.")
 
     min_stake = await _get_match_min_stake(db, payload.match_id)
     if min_stake is not None and payload.stake < min_stake:
@@ -831,7 +831,7 @@ async def place_bet(
         select(Bet).where(Bet.user_id == user.id, Bet.match_id == payload.match_id)
     )).scalars().first()
     if existing:
-        raise HTTPException(status_code=409, detail="Bạn đã đặt cược cho trận này.")
+        raise HTTPException(status_code=409, detail="Lệnh xuống xác đã được ghi nhận. Không được quay xe!")
 
     try:
         balance_update = await db.execute(
@@ -855,7 +855,7 @@ async def place_bet(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Bạn đã đặt cược cho trận này.")
+        raise HTTPException(status_code=409, detail="Lệnh xuống xác đã được ghi nhận!")
     except HTTPException:
         raise
     except Exception as e:
@@ -863,7 +863,7 @@ async def place_bet(
         raise HTTPException(status_code=500, detail=str(e))
 
     await db.refresh(user)
-    return {"message": "Dat cuoc thanh cong.", "remaining_points": user.total_points, "min_stake": min_stake}
+    return {"message": "Chốt đơn thành công! Bắt đầu gáy thôi!", "remaining_points": user.total_points, "min_stake": min_stake}
     return {"message": "Đặt cược thành công.", "remaining_points": user.total_points}
 
 
