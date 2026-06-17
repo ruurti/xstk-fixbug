@@ -266,6 +266,7 @@ function renderMatchCard(match) {
     const status = String(match.status || "upcoming");
     const isLive = isLiveMatch(match);
     const canBet = status === "upcoming";
+    const endTimeStr = match.end_time ? new Date(match.end_time).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "—";
     const homeTeam = escapeHtml(home_team);
     const awayTeam = escapeHtml(away_team);
     const homeIconSrc = safeImageSrc(home_icon);
@@ -334,6 +335,7 @@ function renderMatchCard(match) {
                 <div class="flex items-center gap-2">
                     ${liveBadge}
                     <span class="text-xs bg-sky-50 text-sky-700 font-mono font-semibold px-2 py-1 rounded border border-sky-100">⏰ ${timeStr}</span>
+                    <span class="text-xs bg-rose-50 text-rose-700 font-mono font-semibold px-2 py-1 rounded border border-rose-100">Kết thúc ${endTimeStr}</span>
                 </div>
                 <button type="button"
                     class="inline-flex items-center gap-1 text-xs bg-white text-slate-600 border border-slate-200 hover:border-sky-300 hover:text-sky-700 px-2.5 py-1 rounded-full transition-colors shadow-sm"
@@ -677,7 +679,7 @@ function renderMatchDetail(detail) {
     titleEl.textContent = `${match.home_team} vs ${match.away_team}`;
     subtitleEl.textContent = settlement.is_finished
         ? `Kèo chấp ${match.handicap ?? 0} | Tỷ số ${settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`} | Sau kèo ${settlement.adjusted_score || "--"}`
-        : `Kèo chấp ${match.handicap ?? 0} | Bắt đầu ${formatVNDateTime(match.start_time)} | Trạng thái ${match.status}`;
+        : `Kèo chấp ${match.handicap ?? 0} | Bắt đầu ${formatVNDateTime(match.start_time)} | Kết thúc ${formatVNDateTime(match.end_time)} | Trạng thái ${match.status}`;
     quoteEl.textContent = settlement.headline_quote || getQuoteByDetail(detail);
 
     const homePct = totalPool > 0 ? (choiceStats[0].stake / totalPool) * 100 : 0;

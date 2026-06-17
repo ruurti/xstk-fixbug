@@ -62,6 +62,9 @@ OUTCOME_LABELS = {
     "PENDING": "Chờ kết quả",
 }
 
+MATCH_DEFAULT_DURATION = timedelta(hours=2)
+match_status_sync_task: asyncio.Task | None = None
+
 
 def _format_coins(value: int) -> str:
     return f"{int(value):,}d"
@@ -227,6 +230,43 @@ async def _get_feature_settings(db: AsyncSession) -> dict[str, bool]:
     }
 
 
+def _match_effective_end_time(match: Match) -> datetime:
+    return match.end_time or (match.start_time + MATCH_DEFAULT_DURATION)
+
+
+async def _sync_match_statuses(db: AsyncSession) -> int:
+    """Promote matches from upcoming to live once they reach start_time."""
+    now = datetime.utcnow()
+    rows = (await db.execute(
+        select(Match).where(Match.status != MatchStatus.finished)
+    )).scalars().all()
+
+    changed = 0
+    for match in rows:
+        if match.end_time is None:
+            match.end_time = match.start_time + MATCH_DEFAULT_DURATION
+            changed += 1
+        if match.status == MatchStatus.upcoming and now >= match.start_time:
+            match.status = MatchStatus.live
+            changed += 1
+
+    if changed:
+        await db.commit()
+    return changed
+
+
+async def _match_status_sync_loop() -> None:
+    while True:
+        try:
+            async with AsyncSession(engine) as session:
+                await _sync_match_statuses(session)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Failed to sync match statuses.")
+        await asyncio.sleep(30)
+
+
 # ─── Startup: tạo bảng & mock data ───────────────────────────────────────────
 
 @app.on_event("startup")
@@ -245,6 +285,7 @@ async def startup_event():
             "handicap": "ALTER TABLE matches ADD COLUMN handicap FLOAT DEFAULT 0.0",
             "status": "ALTER TABLE matches ADD COLUMN status VARCHAR DEFAULT 'upcoming'",
             "start_time": "ALTER TABLE matches ADD COLUMN start_time DATETIME",
+            "end_time": "ALTER TABLE matches ADD COLUMN end_time DATETIME",
             "resolved_at": "ALTER TABLE matches ADD COLUMN resolved_at DATETIME",
         }
         for column_name, ddl in missing_match_columns.items():
@@ -256,6 +297,13 @@ async def startup_event():
             UPDATE matches
             SET resolved_at = start_time
             WHERE status = 'finished' AND resolved_at IS NULL
+            """
+        )
+        await conn.exec_driver_sql(
+            """
+            UPDATE matches
+            SET end_time = datetime(start_time, '+2 hours')
+            WHERE end_time IS NULL
             """
         )
 
@@ -312,16 +360,38 @@ async def startup_event():
             mock_matches = [
                 Match(home_team="Vietnam", away_team="Thailand",
                       handicap=-0.5, status=MatchStatus.upcoming,
-                      start_time=datetime(2026, 6, 20, 19, 0)),
+                      start_time=datetime(2026, 6, 20, 19, 0),
+                      end_time=datetime(2026, 6, 20, 21, 0)),
                 Match(home_team="Real Madrid", away_team="Barcelona",
                       handicap=-1.5, status=MatchStatus.upcoming,
-                      start_time=datetime(2026, 6, 21, 2, 45)),
+                      start_time=datetime(2026, 6, 21, 2, 45),
+                      end_time=datetime(2026, 6, 21, 4, 45)),
                 Match(home_team="Man City", away_team="Man United",
                       handicap=0.5, status=MatchStatus.upcoming,
-                      start_time=datetime(2026, 6, 22, 22, 0)),
+                      start_time=datetime(2026, 6, 22, 22, 0),
+                      end_time=datetime(2026, 6, 23, 0, 0)),
             ]
             session.add_all(mock_matches)
             await session.commit()
+
+    async with AsyncSession(engine) as session:
+        await _sync_match_statuses(session)
+
+    global match_status_sync_task
+    if match_status_sync_task is None or match_status_sync_task.done():
+        match_status_sync_task = asyncio.create_task(_match_status_sync_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global match_status_sync_task
+    if match_status_sync_task and not match_status_sync_task.done():
+        match_status_sync_task.cancel()
+        try:
+            await match_status_sync_task
+        except asyncio.CancelledError:
+            pass
+    match_status_sync_task = None
 
 
 # ─── Pydantic Schemas ─────────────────────────────────────────────────────────
@@ -343,6 +413,7 @@ class MatchPayload(BaseModel):
     handicap: float = 0.0
     status: MatchStatus = MatchStatus.upcoming
     start_time: datetime
+    end_time: datetime
 
 class PointRechargePayload(BaseModel):
     amount: int = Field(..., ge=10, le=10000)
@@ -646,6 +717,7 @@ async def create_recharge_request(
 # GET /api/v1/matches — Danh sách trận đang mở kèo (upcoming + live)
 @app.get("/api/v1/matches")
 async def get_upcoming_matches(db: AsyncSession = Depends(get_db)):
+    await _sync_match_statuses(db)
     # Subquery: tổng stake theo (match_id, choice)
     pool_q = (
         select(
@@ -684,6 +756,7 @@ async def get_upcoming_matches(db: AsyncSession = Depends(get_db)):
             "handicap": r.Match.handicap,
             "status": r.Match.status,
             "start_time": r.Match.start_time.isoformat(),
+            "end_time": _match_effective_end_time(r.Match).isoformat(),
             "stakes_home": r.stakes_home,
             "stakes_draw": r.stakes_draw,
             "stakes_away": r.stakes_away,
@@ -700,6 +773,7 @@ async def place_bet(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await _sync_match_statuses(db)
     # Validate match
     match = (await db.execute(
         select(Match).where(Match.id == payload.match_id)
@@ -797,6 +871,7 @@ async def get_match_detail(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await _sync_match_statuses(db)
     match = (await db.execute(
         select(Match).where(Match.id == match_id)
     )).scalars().first()
@@ -999,6 +1074,7 @@ async def get_activity_feed(db: AsyncSession = Depends(get_db)):
 
 @app.get("/api/v1/admin/overview")
 async def get_admin_overview(admin_user: User = Depends(get_admin_user), db: AsyncSession = Depends(get_db)):
+    await _sync_match_statuses(db)
     total_users = (await db.execute(select(func.count()).select_from(User))).scalar_one()
     total_matches = (await db.execute(select(func.count()).select_from(Match))).scalar_one()
     upcoming_matches = (
@@ -1129,6 +1205,7 @@ def _match_response(match: Match):
         "handicap": match.handicap,
         "status": match.status,
         "start_time": match.start_time.isoformat(),
+        "end_time": _match_effective_end_time(match).isoformat() if match.start_time else None,
         "resolved_at": match.resolved_at.isoformat() if getattr(match, "resolved_at", None) else None,
     }
 
@@ -1568,6 +1645,7 @@ async def _build_match_detail_payload(
 
 @app.get("/api/v1/admin/matches")
 async def get_all_matches(admin_user: User = Depends(get_admin_user), db: AsyncSession = Depends(get_db)):
+    await _sync_match_statuses(db)
     query = select(Match).order_by(Match.start_time.asc())
     rows = (await db.execute(query)).scalars().all()
     return [_match_response(r) for r in rows]
@@ -1655,6 +1733,8 @@ async def create_match(
 ):
     if payload.status == MatchStatus.finished:
         raise HTTPException(status_code=400, detail="Hãy dùng chức năng giải trận để kết thúc trận.")
+    if payload.end_time <= payload.start_time:
+        raise HTTPException(status_code=400, detail="Giờ kết thúc phải sau giờ bắt đầu.")
 
     try:
         match = Match(
@@ -1665,6 +1745,7 @@ async def create_match(
             handicap=payload.handicap,
             status=payload.status,
             start_time=payload.start_time,
+            end_time=payload.end_time,
         )
         db.add(match)
         await db.commit()
@@ -1757,6 +1838,10 @@ async def import_matches_csv(
                 start_time = _parse_csv_datetime(
                     _clean_csv_value(row, "start_time") or _clean_csv_value(row, "start_time_ict")
                 )
+                end_time_value = _clean_csv_value(row, "end_time")
+                end_time = _parse_csv_datetime(end_time_value) if end_time_value else start_time + MATCH_DEFAULT_DURATION
+                if end_time <= start_time:
+                    raise ValueError("end_time must be after start_time")
                 home_score = _parse_optional_int(_clean_csv_value(row, "home_score"), 0)
                 away_score = _parse_optional_int(_clean_csv_value(row, "away_score"), 0)
                 handicap = _parse_optional_float(_clean_csv_value(row, "handicap"), 0.0)
@@ -1780,6 +1865,7 @@ async def import_matches_csv(
                     match.handicap = handicap
                     match.status = status
                     match.start_time = start_time
+                    match.end_time = end_time
                     updated += 1
                 else:
                     match_kwargs = {
@@ -1792,6 +1878,7 @@ async def import_matches_csv(
                         "handicap": handicap,
                         "status": status,
                         "start_time": start_time,
+                        "end_time": end_time,
                     }
                     if raw_id:
                         match_kwargs["id"] = int(raw_id)
@@ -1844,6 +1931,8 @@ async def update_match(
         raise HTTPException(status_code=400, detail="Không thể sửa trận đã giải.")
     if payload.status == MatchStatus.finished:
         raise HTTPException(status_code=400, detail="Hãy dùng chức năng giải trận để kết thúc trận.")
+    if payload.end_time <= payload.start_time:
+        raise HTTPException(status_code=400, detail="Giờ kết thúc phải sau giờ bắt đầu.")
 
     try:
         match.home_team = payload.home_team.strip()
@@ -1853,6 +1942,7 @@ async def update_match(
         match.handicap = payload.handicap
         match.status = payload.status
         match.start_time = payload.start_time
+        match.end_time = payload.end_time
         db.add(match)
         await db.commit()
         await db.refresh(match)

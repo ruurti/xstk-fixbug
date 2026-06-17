@@ -502,6 +502,7 @@ function getMatchPayload() {
         handicap: Number(document.getElementById("handicap").value || 0),
         status: document.getElementById("status").value,
         start_time: document.getElementById("start-time").value,
+        end_time: document.getElementById("end-time").value,
     };
 }
 
@@ -524,6 +525,7 @@ function renderMatches() {
     list.innerHTML = state.matches.map(match => {
         const isFinished = match.status === "finished";
         const isLive = match.status === "live";
+        const endTimeText = formatDateTime(match.end_time);
         const homeIconSrc = safeImageSrc(match.home_icon);
         const awayIconSrc = safeImageSrc(match.away_icon);
         const homeIconHtml = homeIconSrc ? `<img src="${homeIconSrc}" class="h-7 w-7 rounded-full border border-slate-700 object-cover" alt="">` : "";
@@ -541,6 +543,7 @@ function renderMatches() {
                             <span class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-400">ID ${match.id}</span>
                             <span class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-400">Kèo ${escapeHtml(match.handicap)}</span>
                             <span class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-400">${escapeHtml(formatDateTime(match.start_time))}</span>
+                            <span class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-400">Kết thúc ${escapeHtml(endTimeText)}</span>
                         </div>
 
                         <div class="grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-center">
@@ -592,6 +595,14 @@ async function saveMatch(event) {
     const payload = getMatchPayload();
     if (!payload.home_team || !payload.away_team || !payload.start_time) {
         showToast("Vui lòng nhập đầy đủ đội nhà, đội khách và thời gian.", "error");
+        return;
+    }
+    if (!payload.end_time) {
+        showToast("Vui lòng nhập giờ kết thúc trận.", "error");
+        return;
+    }
+    if (new Date(payload.end_time) <= new Date(payload.start_time)) {
+        showToast("Giờ kết thúc phải sau giờ bắt đầu.", "error");
         return;
     }
 
@@ -679,6 +690,7 @@ function editMatch(id) {
     document.getElementById("handicap").value = match.handicap;
     document.getElementById("status").value = match.status === "live" ? "live" : "upcoming";
     document.getElementById("start-time").value = toDatetimeLocal(match.start_time);
+    document.getElementById("end-time").value = toDatetimeLocal(match.end_time);
     document.getElementById("match-form-title").textContent = `Sửa trận #${match.id}`;
     document.getElementById("save-match-btn").textContent = "Cập nhật trận";
     document.getElementById("cancel-edit-btn").classList.remove("hidden");
@@ -691,6 +703,7 @@ function resetMatchForm() {
     document.getElementById("match-id").value = "";
     document.getElementById("handicap").value = "0";
     document.getElementById("status").value = "upcoming";
+    document.getElementById("end-time").value = "";
     document.getElementById("match-form-title").textContent = "Thêm trận đấu";
     document.getElementById("save-match-btn").textContent = "Lưu trận";
     document.getElementById("cancel-edit-btn").classList.add("hidden");
