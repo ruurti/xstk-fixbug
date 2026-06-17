@@ -28,7 +28,6 @@ import html
 import re
 
 from app.database import engine, Base, get_db
-from app.models import Match, MatchStatus, Bet, User, PointRechargeRequest, PointRechargeStatus
 from app.models import Match, MatchStatus, Bet, User, PointRechargeRequest, PointRechargeStatus, AppSetting
 from app.dependencies import get_current_user, get_admin_user, ADMIN_EMAILS
 
@@ -941,7 +940,6 @@ async def place_bet(
 
     await db.refresh(user)
     return {"message": "Chốt đơn thành công! Bắt đầu gáy thôi!", "remaining_points": user.total_points, "min_stake": min_stake}
-    return {"message": "Đặt cược thành công.", "remaining_points": user.total_points}
 
 
 # ─── GET /api/v1/matches/{match_id}/bets — Avatar Stack ──────────────────────
@@ -1365,31 +1363,6 @@ def _user_badge_payload(
     if streak_loss >= 3:
         return {"label": "Cứu rỗi", "emoji": "🙏", "color": "red"}
     return None
-
-
-async def _build_profile_payload(
-    user: User,
-    db: Optional[AsyncSession] = None,
-    *,
-    include_badge: bool = True,
-) -> dict:
-    payload = {
-        "id": str(user.id),
-        "email": user.email,
-        "display_name": _user_display_name(user),
-        "total_points": user.total_points,
-        "avatar_url": user.avatar_url,
-        "avatar_color": user.avatar_color or "#6366f1",
-        "initials": _user_initials(user),
-        "is_admin": user.email.strip().lower() in ADMIN_EMAILS,
-        "is_self": True,
-        "can_edit": True,
-    }
-    if db is not None:
-        payload["features"] = await _get_feature_settings(db)
-        if include_badge:
-            payload["badge"] = await _build_user_badge_for_profile(user, db)
-    return payload
 
 
 async def _build_user_badge_for_profile(user: User, db: AsyncSession) -> Optional[dict]:
