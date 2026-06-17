@@ -63,6 +63,15 @@ function formatDateTime(value) {
     }).format(date);
 }
 
+function normalizeMatchStatus(value) {
+    const raw = typeof value === "string"
+        ? value
+        : value && typeof value === "object" && "value" in value
+            ? value.value
+            : value;
+    return String(raw || "").toLowerCase();
+}
+
 function renderMiniAvatar({ avatar_url, avatar_color, initials }) {
     const avatarSrc = safeImageSrc(avatar_url);
     if (avatarSrc) {
@@ -523,8 +532,9 @@ function renderMatches() {
     }
 
     list.innerHTML = state.matches.map(match => {
-        const isFinished = match.status === "finished";
-        const isLive = match.status === "live";
+        const status = normalizeMatchStatus(match.status);
+        const isFinished = status === "finished";
+        const isLive = status === "live";
         const canResolve = isFinished && !match.resolved_at;
         const endTimeText = formatDateTime(match.end_time);
         const homeIconSrc = safeImageSrc(match.home_icon);
@@ -533,7 +543,7 @@ function renderMatches() {
         const awayIconHtml = awayIconSrc ? `<img src="${awayIconSrc}" class="h-7 w-7 rounded-full border border-slate-700 object-cover" alt="">` : "";
         const statusBadge = isLive
             ? `<span class="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-rose-200"><span class="h-2 w-2 rounded-full bg-rose-400 animate-pulse"></span>LIVE</span>`
-            : `<span class="rounded-full border px-3 py-1 ${isFinished ? "border-slate-700 bg-slate-900 text-slate-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}">${escapeHtml(match.status)}</span>`;
+            : `<span class="rounded-full border px-3 py-1 ${isFinished ? "border-slate-700 bg-slate-900 text-slate-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}">${escapeHtml(status || match.status)}</span>`;
 
         return `
             <article class="rounded-2xl border border-slate-800 bg-slate-950/55 p-5">
@@ -684,7 +694,7 @@ async function importMatchesCsv(event) {
 
 function editMatch(id) {
     const match = state.matches.find(item => item.id === id);
-    if (!match || match.status === "finished") return;
+    if (!match || normalizeMatchStatus(match.status) === "finished") return;
     document.getElementById("match-id").value = match.id;
     document.getElementById("home-team").value = match.home_team;
     document.getElementById("away-team").value = match.away_team;
@@ -714,7 +724,7 @@ function resetMatchForm() {
 
 async function deleteMatch(id) {
     const match = state.matches.find(item => item.id === id);
-    if (!match || match.status === "finished") return;
+    if (!match || normalizeMatchStatus(match.status) === "finished") return;
     if (!confirm(`Xóa trận ${match.home_team} vs ${match.away_team}?`)) return;
 
     try {
