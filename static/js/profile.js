@@ -561,3 +561,30 @@ function initRechargeModal() {
         if (e.key === "Escape" && modal.classList.contains("show")) close();
     });
 }
+
+function applyProfileUI(data) {
+    const shortName = data.display_name || data.email.split("@")[0];
+    const safeShortName = escapeHtml(shortName);
+    const badgeHtml = renderBadge(data.badge);
+
+    document.getElementById("profile-name").textContent = data.display_name || data.email.split("@")[0];
+    document.getElementById("profile-email").textContent = data.email;
+    document.getElementById("profile-points").textContent = data.total_points.toLocaleString();
+
+    document.getElementById("user-info").innerHTML =
+        `${headerAvatarHtml(data)}
+         <span class="font-semibold text-slate-900">${safeShortName}</span>
+         &nbsp;|&nbsp; <span class="text-[#D3af37] font-bold">${data.total_points.toLocaleString()}</span>Ä‘`;
+
+    renderAvatar(data);
+
+    const badgeHost = document.getElementById("profile-badge");
+    if (badgeHost) badgeHost.innerHTML = badgeHtml;
+
+    const editable = data.can_edit !== false;
+    const pointsEnabled = Boolean(data.features?.points_enabled);
+    document.getElementById("open-avatar-modal")?.classList.toggle("hidden", !editable);
+    document.getElementById("open-name-modal")?.classList.toggle("hidden", !editable);
+    const rechargeSection = document.getElementById("recharge-section");
+    if (rechargeSection) rechargeSection.classList.toggle("hidden", !editable || !pointsEnabled);
+}

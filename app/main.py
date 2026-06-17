@@ -204,8 +204,7 @@ async def notify_admin_recharge_request(request_id: int, user: User, amount: int
         logger.exception("Failed to send Telegram recharge notification.")
 
 DEFAULT_FEATURE_SETTINGS = {
-    "topup_enabled": "1",
-    "exchange_enabled": "1",
+    "points_enabled": "1",
 }
 
 
@@ -218,9 +217,15 @@ def _parse_bool_setting(value: Optional[str], default: bool = True) -> bool:
 async def _ensure_default_settings(db: AsyncSession) -> None:
     existing = (await db.execute(select(AppSetting))).scalars().all()
     existing_keys = {item.key for item in existing}
+    existing_values = {item.key: item.value for item in existing}
     changed = False
     for key, value in DEFAULT_FEATURE_SETTINGS.items():
         if key not in existing_keys:
+            if key == "points_enabled":
+                value = "1" if (
+                    _parse_bool_setting(existing_values.get("topup_enabled"), True)
+                    and _parse_bool_setting(existing_values.get("exchange_enabled"), True)
+                ) else "0"
             db.add(AppSetting(key=key, value=value))
             changed = True
     if changed:
@@ -231,14 +236,26 @@ async def _get_feature_settings(db: AsyncSession) -> dict[str, bool]:
     await _ensure_default_settings(db)
     settings = (await db.execute(select(AppSetting))).scalars().all()
     value_map = {item.key: item.value for item in settings}
+    legacy_topup = _parse_bool_setting(value_map.get("topup_enabled"), True)
+    legacy_exchange = _parse_bool_setting(value_map.get("exchange_enabled"), True)
     return {
-        "topup_enabled": _parse_bool_setting(value_map.get("topup_enabled"), True),
-        "exchange_enabled": _parse_bool_setting(value_map.get("exchange_enabled"), True),
+        "points_enabled": _parse_bool_setting(
+            value_map.get("points_enabled"),
+            legacy_topup and legacy_exchange,
+        ),
     }
 
 
 def _match_effective_end_time(match: Match) -> datetime:
     return match.end_time or (match.start_time + MATCH_DEFAULT_DURATION)
+
+
+async def _get_match_min_stake(db: AsyncSession, match_id: int) -> Optional[int]:
+    return (
+        await db.execute(
+            select(func.min(Bet.stake)).where(Bet.match_id == match_id)
+        )
+    ).scalar_one()
 
 
 async def _sync_match_statuses(db: AsyncSession) -> int:
@@ -402,7 +419,7 @@ async def shutdown_event():
 class BetPayload(BaseModel):
     match_id: int
     choice: Literal["HOME", "DRAW", "AWAY"]
-    stake: int = Field(..., ge=10)
+    stake: int = Field(..., ge=1)
 
 class ResolvePayload(BaseModel):
     home_score: int = Field(..., ge=0)
@@ -423,8 +440,7 @@ class PointRechargePayload(BaseModel):
 
 
 class AdminSettingsPayload(BaseModel):
-    topup_enabled: bool
-    exchange_enabled: bool
+    points_enabled: bool
 
 
 class AdminUserPointsPayload(BaseModel):
@@ -694,7 +710,7 @@ async def create_recharge_request(
     db: AsyncSession = Depends(get_db),
 ):
     feature_settings = await _get_feature_settings(db)
-    if not feature_settings.get("topup_enabled", True):
+    if not feature_settings.get("points_enabled", True):
         raise HTTPException(status_code=403, detail="Tính năng nạp điểm đang tạm tắt.")
 
     request = PointRechargeRequest(
@@ -733,6 +749,14 @@ async def get_upcoming_matches(db: AsyncSession = Depends(get_db)):
         .group_by(Bet.match_id)
         .subquery()
     )
+    min_stake_q = (
+        select(
+            Bet.match_id.label("match_id"),
+            func.min(Bet.stake).label("min_stake"),
+        )
+        .group_by(Bet.match_id)
+        .subquery()
+    )
 
     query = (
         select(
@@ -741,8 +765,10 @@ async def get_upcoming_matches(db: AsyncSession = Depends(get_db)):
             func.coalesce(pool_q.c.stakes_draw, 0).label("stakes_draw"),
             func.coalesce(pool_q.c.stakes_away, 0).label("stakes_away"),
             func.coalesce(pool_q.c.total_pool, 0).label("total_pool"),
+            min_stake_q.c.min_stake.label("min_stake"),
         )
         .outerjoin(pool_q, Match.id == pool_q.c.match_id)
+        .outerjoin(min_stake_q, Match.id == min_stake_q.c.match_id)
         .where(Match.status != MatchStatus.finished)
         .order_by(case((Match.status == MatchStatus.live, 0), else_=1), Match.start_time.asc())
     )
@@ -765,6 +791,7 @@ async def get_upcoming_matches(db: AsyncSession = Depends(get_db)):
             "stakes_draw": r.stakes_draw,
             "stakes_away": r.stakes_away,
             "total_pool": r.total_pool,
+            "min_stake": int(r.min_stake) if r.min_stake is not None else None,
         }
         for r in rows
     ]
@@ -787,6 +814,13 @@ async def place_bet(
         raise HTTPException(status_code=404, detail="Trận đấu không tồn tại.")
     if match.status != MatchStatus.upcoming:
         raise HTTPException(status_code=400, detail="Trận đấu không còn nhận cược.")
+
+    min_stake = await _get_match_min_stake(db, payload.match_id)
+    if min_stake is not None and payload.stake < min_stake:
+        raise HTTPException(
+            status_code=400,
+            detail=f"So diem toi thieu cho tran nay la {_format_coins(min_stake)}.",
+        )
 
     # Validate balance
     if user.total_points < payload.stake:
@@ -829,6 +863,7 @@ async def place_bet(
         raise HTTPException(status_code=500, detail=str(e))
 
     await db.refresh(user)
+    return {"message": "Dat cuoc thanh cong.", "remaining_points": user.total_points, "min_stake": min_stake}
     return {"message": "Đặt cược thành công.", "remaining_points": user.total_points}
 
 
@@ -1114,8 +1149,7 @@ async def update_admin_settings(
     settings_map = {item.key: item for item in settings}
 
     for key, value in {
-        "topup_enabled": payload.topup_enabled,
-        "exchange_enabled": payload.exchange_enabled,
+        "points_enabled": payload.points_enabled,
     }.items():
         setting = settings_map.get(key)
         if not setting:

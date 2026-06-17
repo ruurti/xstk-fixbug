@@ -1,8 +1,7 @@
 const state = {
     overview: null,
     settings: {
-        topup_enabled: true,
-        exchange_enabled: true,
+        points_enabled: true,
     },
     users: [],
     matches: [],
@@ -780,3 +779,80 @@ window.approveRechargeRequest = approveRechargeRequest;
 window.editMatch = editMatch;
 window.deleteMatch = deleteMatch;
 window.resolveMatch = resolveMatch;
+
+function renderOverviewFeatures() {
+    const container = document.getElementById("overview-features");
+    const enabled = Boolean(state.settings.points_enabled);
+    const items = [{
+        label: "Náº¡p / Ä‘á»•i Ä‘iá»ƒm",
+        enabled,
+        desc: enabled
+            ? "Äang hiá»‡n Ä‘á»“ng thá»i block náº¡p Ä‘iá»ƒm vÃ  Ä‘á»•i Ä‘iá»ƒm trÃªn profile."
+            : "Äang áº©n Ä‘á»“ng thá»i block náº¡p Ä‘iá»ƒm vÃ  Ä‘á»•i Ä‘iá»ƒm trÃªn profile.",
+    }];
+
+    container.innerHTML = items.map(item => `
+        <div class="rounded-2xl border ${item.enabled ? "border-emerald-500/30 bg-emerald-500/8" : "border-rose-500/25 bg-rose-500/8"} px-4 py-4">
+            <div class="flex items-center justify-between gap-3">
+                <div>
+                    <div class="font-semibold text-white">${item.label}</div>
+                    <div class="mt-1 text-sm text-slate-400">${item.desc}</div>
+                </div>
+                <span class="rounded-full px-3 py-1 text-xs font-semibold ${item.enabled ? "bg-emerald-500/15 text-emerald-200" : "bg-rose-500/15 text-rose-200"}">
+                    ${item.enabled ? "Äang báº­t" : "Äang táº¯t"}
+                </span>
+            </div>
+        </div>
+    `).join("");
+}
+
+function renderFeaturePills() {
+    const container = document.getElementById("feature-status");
+    container.innerHTML = [
+        { label: "Náº¡p / Ä‘á»•i Ä‘iá»ƒm", enabled: Boolean(state.settings.points_enabled) },
+    ].map(item => `
+        <span class="rounded-full border px-3 py-1 ${item.enabled ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-rose-500/30 bg-rose-500/10 text-rose-200"}">
+            ${item.label}: ${item.enabled ? "Báº­t" : "Táº¯t"}
+        </span>
+    `).join("");
+}
+
+function renderSettings() {
+    const list = document.getElementById("settings-list");
+    const items = [
+        {
+            key: "points_enabled",
+            title: "Báº­t block náº¡p / Ä‘á»•i Ä‘iá»ƒm",
+            desc: "Báº­t/táº¯t Ä‘á»“ng thá»i pháº§n náº¡p Ä‘iá»ƒm vÃ  Ä‘á»•i Ä‘iá»ƒm trÃªn trang profile.",
+        },
+    ];
+
+    list.innerHTML = items.map(item => {
+        const enabled = Boolean(state.settings[item.key]);
+        return `
+            <div class="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-4">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <div class="font-semibold text-white">${item.title}</div>
+                        <div class="mt-1 text-sm text-slate-400">${item.desc}</div>
+                    </div>
+                    <button type="button" class="switch shrink-0" data-setting-key="${item.key}" data-enabled="${enabled}">
+                        <span class="switch-track block h-7 w-12 rounded-full bg-slate-700 p-1 transition">
+                            <span class="switch-thumb block h-5 w-5 rounded-full bg-white transition"></span>
+                        </span>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join("");
+
+    list.querySelectorAll("[data-setting-key]").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const key = btn.dataset.settingKey;
+            state.settings[key] = !state.settings[key];
+            renderSettings();
+            renderFeaturePills();
+            renderOverviewFeatures();
+        });
+    });
+}

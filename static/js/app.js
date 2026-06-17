@@ -4,6 +4,7 @@ let placedBets = new Set();      // match IDs đã cược trong session này
 let matchDetailCache = new Map();
 const NO_CACHE_FETCH_OPTIONS = { cache: "no-store" };
 const MIN_STAKE = 10;
+const QUICK_STAKE_OPTIONS = [100, 200, 500, 1000];
 
 // Bảng màu avatar — hash từ tên để màu ổn định
 const AVATAR_COLORS = [
@@ -968,3 +969,270 @@ function showToast(msg, type = "success") {
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3500);
 }
+
+function getEffectiveMinStake(minStake) {
+    const parsed = Number(minStake);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function buildQuickStakeOptions(minStake, maxStake) {
+    const effectiveMin = getEffectiveMinStake(minStake);
+    const hasDynamicMin = Number.isFinite(Number(minStake)) && Number(minStake) > 0;
+    const unique = new Set([...(hasDynamicMin ? [effectiveMin] : []), ...QUICK_STAKE_OPTIONS, maxStake]);
+    return [...unique]
+        .map(Number)
+        .filter(value => Number.isFinite(value) && value >= effectiveMin && value <= maxStake)
+        .sort((a, b) => a - b);
+}
+
+function normalizeStakeValue(rawVal, minStake, maxStake) {
+    const effectiveMin = getEffectiveMinStake(minStake);
+    const parsed = parseInt(rawVal, 10);
+    if (!Number.isFinite(parsed)) return effectiveMin;
+    return Math.max(effectiveMin, Math.min(parsed, maxStake));
+}
+
+function renderMatchCard(match) {
+    const timeStr = new Date(match.start_time).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+    const { id, home_team, home_icon, away_team, away_icon, handicap, stakes_home, stakes_draw, stakes_away, total_pool } = match;
+    const status = String(match.status || "upcoming");
+    const isLive = isLiveMatch(match);
+    const canBet = status === "upcoming";
+    const endTimeStr = match.end_time ? new Date(match.end_time).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "-";
+    const homeTeam = escapeHtml(home_team);
+    const awayTeam = escapeHtml(away_team);
+    const homeIconSrc = safeImageSrc(home_icon);
+    const awayIconSrc = safeImageSrc(away_icon);
+    const minStake = match.min_stake;
+    const minStakeHint = minStake ? `Toi thieu ${formatCoins(minStake)}` : "Mo keo tu do";
+
+    const hcSign = handicap > 0 ? "+" : "";
+    const hcClass = handicap >= 0 ? "handicap-pos" : "handicap-neg";
+    const hcBadge = handicap !== 0 ? `<span class="${hcClass}">(${hcSign}${handicap})</span>` : "";
+
+    const betArea = placedBets.has(id)
+        ? `<div class="bet-placed-badge">Da dat cuoc cho tran nay</div>`
+        : canBet
+        ? `
+            <div class="bet-btn-group" id="btn-group-${id}">
+                <div class="bet-choice-block">
+                    <button class="bet-btn w-full" id="bet-home-${id}" onclick="selectChoice(${id}, 'HOME', ${total_pool}, ${stakes_home}, '${status}', ${minStake ?? "null"})">
+                        <span class="bet-label">Nha</span>
+                    </button>
+                    <div class="avatar-stack-row" id="avatars-home-${id}"></div>
+                </div>
+                <div class="bet-choice-block">
+                    <button class="bet-btn w-full" id="bet-draw-${id}" onclick="selectChoice(${id}, 'DRAW', ${total_pool}, ${stakes_draw}, '${status}', ${minStake ?? "null"})">
+                        <span class="bet-label">Hoa</span>
+                    </button>
+                    <div class="avatar-stack-row" id="avatars-draw-${id}"></div>
+                </div>
+                <div class="bet-choice-block">
+                    <button class="bet-btn w-full" id="bet-away-${id}" onclick="selectChoice(${id}, 'AWAY', ${total_pool}, ${stakes_away}, '${status}', ${minStake ?? "null"})">
+                        <span class="bet-label">Khach</span>
+                    </button>
+                    <div class="avatar-stack-row" id="avatars-away-${id}"></div>
+                </div>
+            </div>
+            <div class="mt-2 text-center text-[11px] text-slate-500">${escapeHtml(minStakeHint)}</div>
+            <div id="stake-panel-${id}" class="hidden"></div>`
+        : `
+            <div class="bet-btn-group" id="btn-group-${id}">
+                <div class="bet-choice-block">
+                    <div class="px-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Nha</div>
+                    <div class="avatar-stack-row" id="avatars-home-${id}"></div>
+                </div>
+                <div class="bet-choice-block">
+                    <div class="px-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Hoa</div>
+                    <div class="avatar-stack-row" id="avatars-draw-${id}"></div>
+                </div>
+                <div class="bet-choice-block">
+                    <div class="px-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Khach</div>
+                    <div class="avatar-stack-row" id="avatars-away-${id}"></div>
+                </div>
+            </div>
+            <div class="mt-2 text-center text-[11px] text-slate-500">${escapeHtml(minStakeHint)}</div>
+            <div id="stake-panel-${id}" class="hidden"></div>`;
+
+    const homeIconHtml = homeIconSrc ? `<img src="${homeIconSrc}" class="w-6 h-6 inline-block mr-2 rounded-full border border-slate-200 bg-white">` : "";
+    const awayIconHtml = awayIconSrc ? `<img src="${awayIconSrc}" class="w-6 h-6 inline-block ml-2 rounded-full border border-slate-200 bg-white">` : "";
+    const liveBadge = isLive ? `
+        <span class="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-600">
+            <span class="h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
+            LIVE
+        </span>` : "";
+
+    return `
+        <div class="bg-white border border-slate-200 hover:border-sky-300 rounded-xl p-4 shadow-sm transition duration-200 mb-3 last:mb-0">
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2">
+                    ${liveBadge}
+                    <span class="text-xs bg-sky-50 text-sky-700 font-mono font-semibold px-2 py-1 rounded border border-sky-100">⏰ ${timeStr}</span>
+                    <span class="text-xs bg-rose-50 text-rose-700 font-mono font-semibold px-2 py-1 rounded border border-rose-100">Ket thuc ${endTimeStr}</span>
+                </div>
+                <button type="button"
+                    class="inline-flex items-center gap-1 text-xs bg-white text-slate-600 border border-slate-200 hover:border-sky-300 hover:text-sky-700 px-2.5 py-1 rounded-full transition-colors shadow-sm"
+                    onclick="openMatchDetail(${id})"
+                    title="Xem chi tiet tran">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 16h2M12 8v4m0 8a8 8 0 100-16 8 8 0 000 16z"/>
+                    </svg>
+                    <span>Chi tiet</span>
+                </button>
+            </div>
+
+            <div class="flex items-center justify-between my-3 px-2">
+                <div class="w-2/5 text-center flex flex-col items-center">
+                    <div class="flex items-center justify-center mb-1">${homeIconHtml}</div>
+                    <p class="text-sm font-bold text-slate-900 truncate w-full">${homeTeam} ${hcBadge}</p>
+                    <span class="text-xs text-slate-500 block mt-0.5">Chu nha</span>
+                </div>
+                <div class="w-1/5 text-center text-slate-400 font-black text-sm">VS</div>
+                <div class="w-2/5 text-center flex flex-col items-center">
+                    <div class="flex items-center justify-center mb-1">${awayIconHtml}</div>
+                    <p class="text-sm font-bold text-slate-900 truncate w-full">${awayTeam}</p>
+                    <span class="text-xs text-slate-500 block mt-0.5">Khach</span>
+                </div>
+            </div>
+
+            <div class="text-center text-xs text-slate-500 mb-1">
+                Pool: <span class="text-[#D3af37] font-semibold">${formatCoins(total_pool)}</span>
+            </div>
+
+            ${betArea}
+        </div>`;
+}
+
+window.selectChoice = function(matchId, choice, totalPool, stakesOnChoice, matchStatus = "upcoming", minStake = null) {
+    if (String(matchStatus).toLowerCase() !== "upcoming") return;
+    matchSelections[matchId] = { choice, totalPool, stakesOnChoice, status: matchStatus, minStake };
+
+    ["HOME", "DRAW", "AWAY"].forEach(c => {
+        const btn = document.getElementById(`bet-${c.toLowerCase()}-${matchId}`);
+        if (btn) btn.classList.toggle("selected", c === choice);
+    });
+
+    renderStakePanel(matchId, choice, totalPool, stakesOnChoice, minStake);
+};
+
+function renderStakePanel(matchId, choice, totalPool, stakesOnChoice, minStake = null) {
+    const panel = document.getElementById(`stake-panel-${matchId}`);
+    const selection = matchSelections[matchId] || {};
+    const matchStatus = selection.status || "upcoming";
+    if (!panel || String(matchStatus).toLowerCase() !== "upcoming") return;
+
+    const maxStake = currentUser ? Number(currentUser.total_points || 0) : 1000;
+    const effectiveMin = getEffectiveMinStake(minStake ?? selection.minStake);
+    const defaultStake = Math.max(effectiveMin, Math.min(buildQuickStakeOptions(minStake, maxStake)[0] || effectiveMin, maxStake));
+
+    panel.classList.remove("hidden");
+    if (maxStake < effectiveMin) {
+        panel.innerHTML = `
+            <div class="stake-panel">
+                <label>So diem dat cuoc</label>
+                <div class="text-sm text-rose-600 mt-2">Tran nay dang yeu cau toi thieu ${formatCoins(effectiveMin)}. Hien tai ban co ${formatCoins(maxStake)}.</div>
+            </div>`;
+        return;
+    }
+
+    const chips = buildQuickStakeOptions(minStake, maxStake).map(value => `
+        <button type="button"
+            class="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-sky-300 hover:text-sky-700"
+            onclick="pickStake(${matchId}, ${totalPool}, ${stakesOnChoice}, ${value})">
+            ${formatCoins(value)}
+        </button>
+    `).join("");
+
+    panel.innerHTML = `
+        <div class="stake-panel">
+            <label>So diem dat cuoc</label>
+            <div class="mt-2 text-xs text-slate-500">
+                ${effectiveMin > 1 ? `Toi thieu hien tai: ${formatCoins(effectiveMin)}.` : "Chua co ai dat, ban duoc tu chon muc cuoc."}
+            </div>
+            <div class="mt-3 flex flex-wrap gap-2">
+                ${chips}
+            </div>
+            <div class="mt-3">
+                <input type="number" class="stake-input w-full"
+                    id="input-${matchId}"
+                    min="${effectiveMin}" max="${maxStake}" step="1" value="${defaultStake}"
+                    oninput="syncStake(${matchId}, ${totalPool}, ${stakesOnChoice}, this.value)">
+            </div>
+            <div class="est-return" id="est-${matchId}">
+                Uoc tinh nhan: <strong>${formatCoins(estimateReward(totalPool, stakesOnChoice, defaultStake))}</strong>
+            </div>
+            <button class="confirm-bet-btn" id="confirm-btn-${matchId}" onclick="confirmBet(${matchId})">
+                Xac nhan dat cuoc
+            </button>
+        </div>`;
+}
+
+window.pickStake = function(matchId, totalPool, stakesOnChoice, value) {
+    syncStake(matchId, totalPool, stakesOnChoice, value);
+};
+
+window.syncStake = function(matchId, totalPool, stakesOnChoice, rawVal) {
+    const input = document.getElementById(`input-${matchId}`);
+    if (!input) return;
+    const selection = matchSelections[matchId] || {};
+    const maxStake = currentUser ? Number(currentUser.total_points || 0) : 9999;
+    const value = normalizeStakeValue(rawVal, selection.minStake, maxStake);
+    input.value = value;
+    const est = estimateReward(totalPool, stakesOnChoice, value);
+    const estEl = document.getElementById(`est-${matchId}`);
+    if (estEl) estEl.innerHTML = `Uoc tinh nhan: <strong>${formatCoins(est)}</strong>`;
+};
+
+window.confirmBet = async function(matchId) {
+    const sel = matchSelections[matchId];
+    if (!sel || String(sel.status || "upcoming").toLowerCase() !== "upcoming") return;
+
+    const input = document.getElementById(`input-${matchId}`);
+    const effectiveMin = getEffectiveMinStake(sel.minStake);
+    const stakeVal = parseInt(input?.value || "0", 10) || 0;
+    if (stakeVal < effectiveMin) {
+        showToast(`So diem toi thieu la ${formatCoins(effectiveMin)}.`, "error");
+        return;
+    }
+    if (currentUser && stakeVal > currentUser.total_points) {
+        showToast("So diem khong du.", "error");
+        return;
+    }
+
+    const btn = document.getElementById(`confirm-btn-${matchId}`);
+    btn.disabled = true;
+    btn.textContent = "Dang xu ly...";
+
+    try {
+        const res = await fetch("/api/v1/bets", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ match_id: matchId, choice: sel.choice, stake: stakeVal }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            showToast(data.detail || "Dat cuoc that bai.", "error");
+            btn.disabled = false;
+            btn.textContent = "Xac nhan dat cuoc";
+            return;
+        }
+
+        placedBets.add(matchId);
+        updateDisplayedPoints(data.remaining_points);
+        showToast(`Dat cuoc thanh cong. Con lai ${formatCoins(data.remaining_points)}.`, "success");
+        matchDetailCache.delete(matchId);
+
+        const stakePanel = document.getElementById(`stake-panel-${matchId}`);
+        const btnGroup = document.getElementById(`btn-group-${matchId}`);
+        if (stakePanel) stakePanel.innerHTML = "";
+        if (btnGroup) btnGroup.outerHTML = `<div class="bet-placed-badge">Da dat cuoc cho tran nay</div>`;
+
+        fetchAvatarStack(matchId);
+        fetchUpcomingMatches();
+        startTicker();
+    } catch (e) {
+        showToast("Loi ket noi. Vui long thu lai.", "error");
+        btn.disabled = false;
+        btn.textContent = "Xac nhan dat cuoc";
+    }
+};
