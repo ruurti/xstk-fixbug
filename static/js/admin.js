@@ -525,6 +525,7 @@ function renderMatches() {
     list.innerHTML = state.matches.map(match => {
         const isFinished = match.status === "finished";
         const isLive = match.status === "live";
+        const canResolve = isFinished && !match.resolved_at;
         const endTimeText = formatDateTime(match.end_time);
         const homeIconSrc = safeImageSrc(match.home_icon);
         const awayIconSrc = safeImageSrc(match.away_icon);
@@ -567,17 +568,19 @@ function renderMatches() {
                                 <button type="button" onclick="editMatch(${match.id})" ${isFinished ? "disabled" : ""} class="rounded-xl border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">Sửa</button>
                                 <button type="button" onclick="deleteMatch(${match.id})" ${isFinished ? "disabled" : ""} class="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40">Xóa</button>
                             </div>
-                            ${isFinished ? `
-                                <div class="rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">Trận đã được giải.</div>
-                            ` : `
+                            ${canResolve ? `
                                 <div class="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-                                    <div class="mb-3 text-sm font-semibold text-white">Nhập tỉ số</div>
+                                    <div class="mb-3 text-sm font-semibold text-white">Nhập tỉ số để giải trận</div>
                                     <div class="flex items-center gap-2">
                                         <input id="home-score-${match.id}" type="number" min="0" placeholder="H" class="w-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-center text-white outline-none transition focus:border-emerald-500">
                                         <span class="text-slate-500">-</span>
                                         <input id="away-score-${match.id}" type="number" min="0" placeholder="A" class="w-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-center text-white outline-none transition focus:border-emerald-500">
                                         <button type="button" class="rounded-xl bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400" onclick="resolveMatch(${match.id})">Giải trận</button>
                                     </div>
+                                </div>
+                            ` : isFinished ? `
+                                <div class="rounded-2xl border ${match.resolved_at ? "border-amber-500/25 bg-amber-500/10 text-amber-100" : "border-slate-700 bg-slate-900/70 text-slate-200"} px-4 py-3 text-sm">
+                                    ${match.resolved_at ? "Trận đã được giải." : "Trận đã kết thúc, chờ admin giải để công bố kết quả."}
                                 </div>
                             `}
                         </div>

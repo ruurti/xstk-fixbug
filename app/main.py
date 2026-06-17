@@ -235,7 +235,7 @@ def _match_effective_end_time(match: Match) -> datetime:
 
 
 async def _sync_match_statuses(db: AsyncSession) -> int:
-    """Promote matches from upcoming to live once they reach start_time."""
+    """Promote matches based on start/end times."""
     now = datetime.utcnow()
     rows = (await db.execute(
         select(Match).where(Match.status != MatchStatus.finished)
@@ -248,6 +248,9 @@ async def _sync_match_statuses(db: AsyncSession) -> int:
             changed += 1
         if match.status == MatchStatus.upcoming and now >= match.start_time:
             match.status = MatchStatus.live
+            changed += 1
+        if match.status == MatchStatus.live and now >= match.end_time:
+            match.status = MatchStatus.finished
             changed += 1
 
     if changed:
@@ -292,13 +295,6 @@ async def startup_event():
             if column_name not in match_column_names:
                 await conn.exec_driver_sql(ddl)
 
-        await conn.exec_driver_sql(
-            """
-            UPDATE matches
-            SET resolved_at = start_time
-            WHERE status = 'finished' AND resolved_at IS NULL
-            """
-        )
         await conn.exec_driver_sql(
             """
             UPDATE matches
@@ -757,6 +753,7 @@ async def get_upcoming_matches(db: AsyncSession = Depends(get_db)):
             "status": r.Match.status,
             "start_time": r.Match.start_time.isoformat(),
             "end_time": _match_effective_end_time(r.Match).isoformat(),
+            "result_published": bool(r.Match.resolved_at),
             "stakes_home": r.stakes_home,
             "stakes_draw": r.stakes_draw,
             "stakes_away": r.stakes_away,
@@ -1206,6 +1203,7 @@ def _match_response(match: Match):
         "status": match.status,
         "start_time": match.start_time.isoformat(),
         "end_time": _match_effective_end_time(match).isoformat() if match.start_time else None,
+        "result_published": bool(getattr(match, "resolved_at", None)),
         "resolved_at": match.resolved_at.isoformat() if getattr(match, "resolved_at", None) else None,
     }
 
@@ -1430,6 +1428,18 @@ def _build_headline_quote(
     settlement: dict,
     summary: dict,
 ) -> str:
+    if settlement.get("is_finished") and not settlement.get("result_published"):
+        return _stable_pick(
+            [
+                "Trận đã khép lại theo lịch, hiện đang chờ công bố kết quả chính thức.",
+                "90 phút đã qua, nhưng bảng điểm vẫn còn chờ cú nhấp chuột từ admin.",
+                "Kèo đã hết giờ, kết quả vẫn đang được giữ ở trạng thái chờ xác nhận.",
+                "Trận này đã chốt giờ thi đấu, còn tỉ số thì đợi người có quyền công bố.",
+                "Người chơi tạm đứng xem, vì kết quả chính thức vẫn chưa được mở khóa.",
+            ],
+            f"{match.id}:pending_result",
+        )
+
     if settlement["is_finished"]:
         if settlement["refunded"]:
             return _stable_pick(
@@ -1520,28 +1530,34 @@ async def _build_match_detail_payload(
         summary[choice]["count"] += 1
 
     is_finished = match.status == MatchStatus.finished
-    adjusted_home = match.home_score + match.handicap
-    adjusted_away = match.away_score
-    if adjusted_home > adjusted_away:
-        winning_choice = "HOME"
-    elif adjusted_home < adjusted_away:
-        winning_choice = "AWAY"
-    else:
-        winning_choice = "DRAW"
+    result_published = is_finished and bool(match.resolved_at)
+    adjusted_home = None
+    adjusted_away = None
+    winning_choice = None
+    if result_published:
+        adjusted_home = match.home_score + match.handicap
+        adjusted_away = match.away_score
+        if adjusted_home > adjusted_away:
+            winning_choice = "HOME"
+        elif adjusted_home < adjusted_away:
+            winning_choice = "AWAY"
+        else:
+            winning_choice = "DRAW"
 
     total_pool = sum(summary[ch]["stake"] for ch in summary)
-    stakes_on_winner = summary[winning_choice]["stake"]
+    stakes_on_winner = summary[winning_choice]["stake"] if winning_choice else 0
     has_bets = bool(rows)
-    refunded = is_finished and has_bets and (stakes_on_winner == 0)
+    refunded = result_published and has_bets and (stakes_on_winner == 0)
 
     settlement = {
         "is_finished": is_finished,
-        "winning_choice": winning_choice if is_finished else None,
-        "winning_choice_label": _choice_label(winning_choice) if is_finished else None,
-        "adjusted_home_score": adjusted_home if is_finished else None,
-        "adjusted_away_score": adjusted_away if is_finished else None,
-        "adjusted_score": f"{adjusted_home}-{adjusted_away}" if is_finished else None,
-        "score": f"{match.home_score}-{match.away_score}" if is_finished else None,
+        "result_published": result_published,
+        "winning_choice": winning_choice if result_published else None,
+        "winning_choice_label": _choice_label(winning_choice) if result_published else None,
+        "adjusted_home_score": adjusted_home if result_published else None,
+        "adjusted_away_score": adjusted_away if result_published else None,
+        "adjusted_score": f"{adjusted_home}-{adjusted_away}" if result_published else None,
+        "score": f"{match.home_score}-{match.away_score}" if result_published else None,
         "refunded": refunded,
         "winner_count": 0,
         "loser_count": 0,
@@ -1550,7 +1566,7 @@ async def _build_match_detail_payload(
     }
 
     for row in rows:
-        if not is_finished:
+        if not result_published:
             outcome = "PENDING"
         elif refunded:
             outcome = "REFUND"
@@ -1582,7 +1598,7 @@ async def _build_match_detail_payload(
                 outcome=outcome,
                 stake=row.Bet.stake,
                 points_earned=row.Bet.points_earned,
-                winning_choice=winning_choice if is_finished else None,
+                winning_choice=winning_choice if result_published else None,
                 name=user_payload["name"],
             ),
             "reward_label": _format_reward_label(outcome, row.Bet.stake, row.Bet.points_earned),
@@ -1592,7 +1608,7 @@ async def _build_match_detail_payload(
     my_row = next((row for row in rows if row.User.id == user.id), None)
     my_bet = None
     if my_row:
-        if not is_finished:
+        if not result_published:
             my_outcome = "PENDING"
         elif refunded:
             my_outcome = "REFUND"
@@ -1614,7 +1630,7 @@ async def _build_match_detail_payload(
                 outcome=my_outcome,
                 stake=my_row.Bet.stake,
                 points_earned=my_row.Bet.points_earned,
-                winning_choice=winning_choice if is_finished else None,
+                winning_choice=winning_choice if result_published else None,
                 name=_user_display_name(my_row.User),
             ),
             "reward_label": _format_reward_label(my_outcome, my_row.Bet.stake, my_row.Bet.points_earned),
@@ -1988,13 +2004,16 @@ async def resolve_match(
     admin_user: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await _sync_match_statuses(db)
     match = (await db.execute(
         select(Match).where(Match.id == match_id)
     )).scalars().first()
 
     if not match:
         raise HTTPException(status_code=404, detail="Trận đấu không tồn tại.")
-    if match.status == MatchStatus.finished:
+    if match.status != MatchStatus.finished:
+        raise HTTPException(status_code=400, detail="Trận chưa kết thúc, chưa thể giải.")
+    if match.resolved_at is not None:
         raise HTTPException(status_code=400, detail="Trận đã được giải trước đó.")
 
     try:

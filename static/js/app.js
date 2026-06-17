@@ -432,12 +432,15 @@ function renderLatestFinishedMatch(detail) {
     const match = detail.match || {};
     const settlement = detail.settlement || {};
     const pool = detail.pool || {};
+    const isPublished = Boolean(settlement.result_published);
     const totalPool = Number(pool.total_pool || 0);
-    const winnerText = settlement.refunded
+    const winnerText = !isPublished
+        ? "Chờ kết quả"
+        : settlement.refunded
         ? "Hoàn điểm"
         : choiceLabel(settlement.winning_choice);
-    const scoreText = settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`;
-    const adjustedText = settlement.adjusted_score ? `Sau kèo ${settlement.adjusted_score}` : "Sau kèo --";
+    const scoreText = isPublished ? (settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`) : "Chờ kết quả";
+    const adjustedText = isPublished && settlement.adjusted_score ? `Sau kèo ${settlement.adjusted_score}` : "Đang chờ công bố";
     const winnerCount = Number(settlement.winner_count || 0);
     const loserCount = Number(settlement.loser_count || 0);
     const refundCount = Number(settlement.refund_count || 0);
@@ -446,13 +449,13 @@ function renderLatestFinishedMatch(detail) {
         <div class="space-y-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div class="min-w-0">
-                    <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Trận đã hoàn tất gần nhất</div>
+                    <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">${isPublished ? "Trận đã hoàn tất gần nhất" : "Trận chờ kết quả gần nhất"}</div>
                     <div class="mt-1 text-lg font-black text-slate-900 truncate">${escapeHtml(match.home_team || "Trận đấu")} vs ${escapeHtml(match.away_team || "")}</div>
                     <div class="mt-1 text-sm text-slate-500">${escapeHtml(scoreText)} · ${escapeHtml(adjustedText)} · ${formatVNDateTime(match.start_time)}</div>
                 </div>
             <div class="flex items-center gap-2 flex-wrap justify-end">
-                <span class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${settlement.refunded ? "border-amber-200 bg-amber-50 text-amber-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}">
-                    ${escapeHtml(settlement.refunded ? "Hoàn điểm" : `Cửa thắng: ${winnerText}`)}
+                <span class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${!isPublished ? "border-slate-200 bg-slate-50 text-slate-600" : settlement.refunded ? "border-amber-200 bg-amber-50 text-amber-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}">
+                    ${escapeHtml(!isPublished ? "Chờ kết quả" : settlement.refunded ? "Hoàn điểm" : `Cửa thắng: ${winnerText}`)}
                 </span>
                     <button type="button" onclick="openMatchDetail(${match.id}, true)" class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition-colors">
                         🔎Chi tiết
@@ -460,12 +463,22 @@ function renderLatestFinishedMatch(detail) {
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                ${summaryTile("Tổng quỹ", formatCoins(totalPool), "text-[#D3af37]")}
-                ${summaryTile("Người thắng", String(winnerCount), "text-emerald-600")}
-                ${summaryTile("Người thua", String(loserCount), "text-rose-600")}
-                ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(refundCount) : winnerText, "text-[#D3af37]")}
-            </div>
+            ${isPublished ? `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    ${summaryTile("Tổng quỹ", formatCoins(totalPool), "text-[#D3af37]")}
+                    ${summaryTile("Người thắng", String(winnerCount), "text-emerald-600")}
+                    ${summaryTile("Người thua", String(loserCount), "text-rose-600")}
+                    ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(refundCount) : winnerText, "text-[#D3af37]")}
+                </div>
+            ` : `
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    Trận đã kết thúc theo lịch và đang chờ công bố kết quả chính thức.
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    ${summaryTile("Tổng quỹ", formatCoins(totalPool), "text-[#D3af37]")}
+                    ${summaryTile("Trạng thái", "Chờ kết quả", "text-slate-600")}
+                </div>
+            `}
 
             <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
                 <div class="text-[11px] uppercase tracking-wide text-amber-700">Ý kiến của chuyên gia</div>
@@ -479,10 +492,7 @@ function renderLatestFinishedMatch(detail) {
 const matchSelections = {};  // { matchId: { choice, totalPool, stakesOnChoice } }
 
 window.selectChoice = function(matchId, choice, totalPool, stakesOnChoice, matchStatus = "upcoming") {
-    if (String(matchStatus).toLowerCase() !== "upcoming") {
-        showToast("Trận đang diễn ra, tạm khóa đặt cược.", "error");
-        return;
-    }
+    if (String(matchStatus).toLowerCase() !== "upcoming") return;
 
     matchSelections[matchId] = { choice, totalPool, stakesOnChoice, status: matchStatus };
 
@@ -502,15 +512,8 @@ function renderStakePanel(matchId, choice, totalPool, stakesOnChoice) {
     const panel = document.getElementById(`stake-panel-${matchId}`);
     const matchStatus = matchSelections[matchId]?.status || "upcoming";
     if (String(matchStatus).toLowerCase() !== "upcoming") {
-        panel.classList.remove("hidden");
-        panel.innerHTML = `
-            <div class="stake-panel border border-rose-200 bg-rose-50">
-                <label>Đặt cược</label>
-                <div class="text-sm text-rose-600 mt-2 flex items-center gap-2">
-                    <span class="inline-flex h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse"></span>
-                    <span>Trận đang diễn ra, tạm khóa đặt cược.</span>
-                </div>
-            </div>`;
+        panel.classList.add("hidden");
+        panel.innerHTML = "";
         return;
     }
     const maxStake = currentUser ? currentUser.total_points : 1000;
@@ -563,10 +566,7 @@ window.syncStake = function(matchId, totalPool, stakesOnChoice, rawVal) {
 window.confirmBet = async function(matchId) {
     const sel = matchSelections[matchId];
     if (!sel) return;
-    if (String(sel.status || "upcoming").toLowerCase() !== "upcoming") {
-        showToast("Trận đang diễn ra, tạm khóa đặt cược.", "error");
-        return;
-    }
+    if (String(sel.status || "upcoming").toLowerCase() !== "upcoming") return;
 
     const stakeVal = parseInt(document.getElementById(`input-${matchId}`).value) || 0;
     if (stakeVal < MIN_STAKE) { showToast(`Số điểm tối thiểu là ${MIN_STAKE}.`, "error"); return; }
@@ -670,6 +670,7 @@ function renderMatchDetail(detail) {
     const bettors = detail.bettors || {};
     const myBet = detail.my_bet;
     const totalPool = Number(pool.total_pool || 0);
+    const resultPublished = Boolean(settlement.result_published);
     const choiceStats = [
         { key: "HOME", stake: Number(pool.home_stakes || 0), count: Number(pool.home_count || 0), bettors: bettors.HOME || [] },
         { key: "DRAW", stake: Number(pool.draw_stakes || 0), count: Number(pool.draw_count || 0), bettors: bettors.DRAW || [] },
@@ -677,8 +678,10 @@ function renderMatchDetail(detail) {
     ];
 
     titleEl.textContent = `${match.home_team} vs ${match.away_team}`;
-    subtitleEl.textContent = settlement.is_finished
+    subtitleEl.textContent = resultPublished
         ? `Kèo chấp ${match.handicap ?? 0} | Tỷ số ${settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`} | Sau kèo ${settlement.adjusted_score || "--"}`
+        : settlement.is_finished
+        ? `Kèo chấp ${match.handicap ?? 0} | Kết thúc ${formatVNDateTime(match.end_time)} | Chờ kết quả`
         : `Kèo chấp ${match.handicap ?? 0} | Bắt đầu ${formatVNDateTime(match.start_time)} | Kết thúc ${formatVNDateTime(match.end_time)} | Trạng thái ${match.status}`;
     quoteEl.textContent = settlement.headline_quote || getQuoteByDetail(detail);
 
@@ -694,12 +697,16 @@ function renderMatchDetail(detail) {
             ${summaryTile("Khách", formatCoins(choiceStats[2].stake), "text-[#D3af37]")}
         </div>
 
-        ${settlement.is_finished ? `
+        ${resultPublished ? `
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                 ${summaryTile("Kết quả", settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`, "text-[#D3af37]")}
                 ${summaryTile("Sau kèo", settlement.adjusted_score || "--", "text-[#D3af37]")}
                 ${summaryTile("Người thắng", String(Number(settlement.winner_count || 0)), "text-[#D3af37]")}
                 ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(Number(settlement.refund_count || 0)) : choiceLabel(settlement.winning_choice), "text-[#D3af37]")}
+            </div>
+        ` : settlement.is_finished ? `
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                Trận đã kết thúc và đang chờ công bố kết quả chính thức.
             </div>
         ` : ""}
 
@@ -763,9 +770,9 @@ function renderChoiceColumn(choiceStat, pct, settlement) {
 }
 
 function getChoiceState(choiceKey, settlement) {
-    if (!settlement?.is_finished) {
+    if (!settlement?.result_published) {
         return {
-            label: "Chờ",
+            label: "Chờ kết quả",
             badgeClass: "border-slate-200 bg-slate-50 text-slate-600",
         };
     }
