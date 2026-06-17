@@ -1005,7 +1005,7 @@ async def get_latest_finished_match_detail(
             select(Match)
             .where(Match.status == MatchStatus.finished)
             .order_by(desc(func.coalesce(Match.resolved_at, Match.start_time)), desc(Match.id))
-            .limit(1)
+            .limit(5)
         )
     ).scalars().first()
     if not match:
