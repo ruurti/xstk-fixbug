@@ -1000,18 +1000,21 @@ async def get_latest_finished_match_detail(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    match = (
+    matches = (
         await db.execute(
             select(Match)
             .where(Match.status == MatchStatus.finished)
             .order_by(desc(func.coalesce(Match.resolved_at, Match.start_time)), desc(Match.id))
             .limit(5)
         )
-    ).scalars().first()
-    if not match:
+    ).scalars().all()
+    if not matches:
         raise HTTPException(status_code=404, detail="Chưa có trận nào hoàn tất.")
 
-    return await _build_match_detail_payload(match=match, user=user, db=db)
+    return [
+        await _build_match_detail_payload(match=match, user=user, db=db)
+        for match in matches
+    ]
 
 
 # ─── GET /api/v1/leaderboard — Bảng Phong Thần ───────────────────────────────

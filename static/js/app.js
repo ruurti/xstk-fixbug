@@ -247,15 +247,16 @@ async function fetchLatestFinishedMatch() {
     try {
         const res = await fetch("/api/v1/matches/latest-finished/detail", NO_CACHE_FETCH_OPTIONS);
         if (res.status === 404) {
-            el.innerHTML = `<div class="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">Chưa có trận nào hoàn tất gần nhất.</div>`;
+            el.innerHTML = `<div class="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">Chưa có trận nào hoàn tất.</div>`;
             return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        el.innerHTML = renderLatestFinishedMatch(data);
+        const details = Array.isArray(data) ? data : [data];
+        el.innerHTML = renderLatestFinishedMatches(details);
     } catch (e) {
         console.error(e);
-        el.innerHTML = `<div class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">Không tải được trận đã hoàn tất gần nhất.</div>`;
+        el.innerHTML = `<div class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">Không tải được danh sách trận đã hoàn tất.</div>`;
     }
 }
 
@@ -376,6 +377,13 @@ function renderLatestFinishedMatch(detail) {
                 <div class="mt-2 text-sm leading-relaxed text-amber-900 italic">${escapeHtml(settlement.headline_quote || getQuoteByDetail(detail))}</div>
             </div>
         </div>`;
+}
+
+function renderLatestFinishedMatches(details) {
+    if (!details.length) {
+        return `<div class="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">Chưa có trận nào hoàn tất.</div>`;
+    }
+    return `<div class="space-y-4">${details.map(renderLatestFinishedMatch).join("")}</div>`;
 }
 
 
