@@ -280,13 +280,8 @@ function renderMatchCard(match) {
 
     const betArea = placedBets.has(id)
         ? `<div class="bet-placed-badge">✅ Đã đặt cược cho trận này</div>`
-        : !canBet
+        : canBet
         ? `
-            <div class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700 flex items-center gap-2">
-                <span class="inline-flex h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse"></span>
-                <span>Trận đang diễn ra, tạm khóa đặt cược.</span>
-            </div>`
-        : `
             <div class="bet-btn-group" id="btn-group-${id}">
                 <div class="bet-choice-block">
                     <button class="bet-btn w-full" id="bet-home-${id}" onclick="selectChoice(${id}, 'HOME', ${total_pool}, ${stakes_home}, '${status}')">
@@ -304,6 +299,22 @@ function renderMatchCard(match) {
                     <button class="bet-btn w-full" id="bet-away-${id}" onclick="selectChoice(${id}, 'AWAY', ${total_pool}, ${stakes_away}, '${status}')">
                         <span class="bet-label">Khách</span>
                     </button>
+                    <div class="avatar-stack-row" id="avatars-away-${id}"></div>
+                </div>
+            </div>
+            <div id="stake-panel-${id}" class="hidden"></div>`
+        : `
+            <div class="bet-btn-group" id="btn-group-${id}">
+                <div class="bet-choice-block">
+                    <div class="px-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Nhà</div>
+                    <div class="avatar-stack-row" id="avatars-home-${id}"></div>
+                </div>
+                <div class="bet-choice-block">
+                    <div class="px-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Hòa</div>
+                    <div class="avatar-stack-row" id="avatars-draw-${id}"></div>
+                </div>
+                <div class="bet-choice-block">
+                    <div class="px-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Khách</div>
                     <div class="avatar-stack-row" id="avatars-away-${id}"></div>
                 </div>
             </div>
