@@ -582,7 +582,7 @@ function renderMatches() {
                                 <div class="rounded-2xl border ${match.resolved_at ? "border-amber-500/25 bg-amber-500/10 text-amber-100" : "border-slate-700 bg-slate-900/70 text-slate-200"} px-4 py-3 text-sm">
                                     ${match.resolved_at ? "Trận đã được giải." : "Trận đã kết thúc, chờ admin giải để công bố kết quả."}
                                 </div>
-                            `}
+                            ` : ""}
                         </div>
                     </div>
                 </div>
