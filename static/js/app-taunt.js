@@ -4,12 +4,38 @@
     const tauntRotators = new Map();
     const baseFetchUpcomingMatches = fetchUpcomingMatches;
 
+    // Trả về mô tả handicap: dùng từ tiếng Việt thuần cho 0.25/0.5/0.75, còn lại dùng số
+    function formatHandicapText(homeName, awayName, handicap) {
+        if (!handicap || handicap === 0) return "";
+        const absHc = Math.abs(handicap);
+        const whole = Math.floor(absHc);
+        const fraction = Math.round((absHc - whole) * 100);
+
+        let hcStr;
+        if (fraction === 0) {
+            hcStr = `${whole} trái`;
+        } else if (whole === 0 && fraction === 25) {
+            hcStr = "1/4 trái";
+        } else if (whole === 0 && fraction === 50) {
+            hcStr = "nửa trái";
+        } else if (whole === 0 && fraction === 75) {
+            hcStr = "3/4 trái";
+        } else {
+            // Số lẻ phức tạp: dùng số thuần để tránh từ ghép ngô nghê
+            hcStr = `${absHc} trái`;
+        }
+
+        return handicap < 0
+            ? `<strong>${homeName}</strong> chấp <strong>${awayName}</strong> ${hcStr}`
+            : `<strong>${awayName}</strong> chấp <strong>${homeName}</strong> ${hcStr}`;
+    }
+
     window.formatCoins = function formatCoinsClean(value) {
         return `${Number(value || 0).toLocaleString()}d`;
     };
 
     window.choiceLabel = function choiceLabelClean(choice) {
-        return { HOME: "Chu nha", DRAW: "Hoa", AWAY: "Khach" }[choice] || choice;
+        return { HOME: "Chủ nhà", DRAW: "Hòa", AWAY: "Khách" }[choice] || choice;
     };
 
     function tauntRotatorKey(matchId, choice) {
@@ -34,10 +60,22 @@
         if (!slot || !entry) return;
         const displayName = escapeHtml(entry.display_name || entry.name || entry.initials || "User");
         const tauntText = escapeHtml(entry.taunt_text || "");
+
+        // Avatar mini: ảnh hoặc initials với màu
+        const avatarSrc = safeImageSrc(entry.avatar_url);
+        const avatarBg = safeCssColor(entry.avatar_color);
+        const initials = escapeHtml(entry.initials || displayName.slice(0, 2).toUpperCase() || "?");
+        const avatarHtml = avatarSrc
+            ? `<img src="${avatarSrc}" alt="" class="taunt-avatar-mini" style="object-fit:cover;">`
+            : `<span class="taunt-avatar-mini" style="background:${avatarBg}">${initials}</span>`;
+
         slot.innerHTML = `
-            <div class="taunt-bubble">
-                <div class="taunt-name">${displayName}</div>
-                <div class="taunt-text">${tauntText}</div>
+            <div class="taunt-chat-row">
+                ${avatarHtml}
+                <div class="taunt-bubble">
+                    <div class="taunt-name">${displayName}</div>
+                    <div class="taunt-text">${tauntText}</div>
+                </div>
             </div>
         `;
     }
@@ -70,6 +108,61 @@
             renderTauntBubble(slot, taunts[index]);
         }, 3000);
         tauntRotators.set(tauntRotatorKey(matchId, choice), timer);
+    }
+
+    function renderPoolBlock(totalPool, stakesHome, stakesDraw, stakesAway, isOddHandicap) {
+        const pool = Number(totalPool) || 0;
+        const home = Number(stakesHome) || 0;
+        const draw = Number(stakesDraw) || 0;
+        const away = Number(stakesAway) || 0;
+
+        if (pool === 0) {
+            return `
+                <div class="pool-block pool-block-empty">
+                    <span class="pool-empty-icon">🏦</span>
+                    <span class="pool-empty-text">Chưa có ai góp quỹ — vào trước để mở pool!</span>
+                </div>`;
+        }
+
+        const homePct = Math.round((home / pool) * 100);
+        const drawPct = isOddHandicap ? 0 : Math.round((draw / pool) * 100);
+        const awayPct = 100 - homePct - drawPct;
+
+        const barHome  = homePct > 0 ? `<div class="pool-bar-seg pool-bar-home"  style="width:${homePct}%"  title="Nhà ${homePct}%"></div>` : "";
+        const barDraw  = (!isOddHandicap && drawPct > 0) ? `<div class="pool-bar-seg pool-bar-draw"  style="width:${drawPct}%"  title="Hòa ${drawPct}%"></div>` : "";
+        const barAway  = awayPct > 0 ? `<div class="pool-bar-seg pool-bar-away"  style="width:${awayPct}%" title="Khách ${awayPct}%"></div>` : "";
+
+        const breakdownHome = `
+            <div class="pool-side pool-side-home">
+                <span class="pool-side-label">NHÀ</span>
+                <span class="pool-side-pct">${homePct}%</span>
+                <span class="pool-side-amt">${formatCoins(home)}</span>
+            </div>`;
+        const breakdownDraw = !isOddHandicap ? `
+            <div class="pool-side pool-side-draw">
+                <span class="pool-side-label">HÒA</span>
+                <span class="pool-side-pct">${drawPct}%</span>
+                <span class="pool-side-amt">${formatCoins(draw)}</span>
+            </div>` : "";
+        const breakdownAway = `
+            <div class="pool-side pool-side-away">
+                <span class="pool-side-label">KHÁCH</span>
+                <span class="pool-side-pct">${awayPct}%</span>
+                <span class="pool-side-amt">${formatCoins(away)}</span>
+            </div>`;
+
+        return `
+            <div class="pool-block">
+                <div class="pool-total-row">
+                    <span class="pool-total-icon">💰</span>
+                    <span class="pool-total-amount">${formatCoins(pool)}</span>
+                    <span class="pool-total-label">tổng quỹ</span>
+                </div>
+                <div class="pool-bar">${barHome}${barDraw}${barAway}</div>
+                <div class="pool-breakdown${isOddHandicap ? " pool-breakdown-2col" : ""}">
+                    ${breakdownHome}${breakdownDraw}${breakdownAway}
+                </div>
+            </div>`;
     }
 
     function renderChoiceBlock(matchId, totalPool, status, minStake, choice, label, stakeValue, clickable) {
@@ -163,7 +256,9 @@
         const homeIconSrc = safeImageSrc(home_icon);
         const awayIconSrc = safeImageSrc(away_icon);
         const minStake = match.min_stake;
-        const minStakeHint = minStake ? `Toi thieu ${formatCoins(minStake)}` : "Nguoi dau mo pool tu do";
+        const minStakeHint = minStake ? `Tối thiểu ${formatCoins(minStake)}` : "Người đầu mở pool tự do";
+        // Kèo chấp lẻ (0.5, 1.5, ...) không có kết quả hòa
+        const isOddHandicap = handicap % 1 !== 0;
 
         const hcSign = handicap > 0 ? "+" : "";
         const hcClass = handicap >= 0 ? "handicap-pos" : "handicap-neg";
@@ -171,9 +266,9 @@
 
         const choiceGrid = `
             <div class="bet-btn-group" id="btn-group-${id}">
-                ${renderChoiceBlock(id, total_pool, status, minStake, "HOME", "Nha", stakes_home, canBet)}
-                ${renderChoiceBlock(id, total_pool, status, minStake, "DRAW", "Hoa", stakes_draw, canBet)}
-                ${renderChoiceBlock(id, total_pool, status, minStake, "AWAY", "Khach", stakes_away, canBet)}
+                ${renderChoiceBlock(id, total_pool, status, minStake, "HOME", "Nhà", stakes_home, canBet)}
+                ${!isOddHandicap ? renderChoiceBlock(id, total_pool, status, minStake, "DRAW", "Hòa", stakes_draw, canBet) : ""}
+                ${renderChoiceBlock(id, total_pool, status, minStake, "AWAY", "Khách", stakes_away, canBet)}
             </div>
         `;
 
@@ -184,7 +279,7 @@
                 <div id="stake-panel-${id}" class="hidden"></div>
             `
             : `
-                ${hasPlaced ? `<div class="bet-placed-badge">Da dat cuoc cho tran nay</div>` : ""}
+                ${hasPlaced ? `<div class="bet-placed-badge">Đã đặt cược cho trận này</div>` : ""}
                 ${choiceGrid}
                 <div id="stake-panel-${id}" class="hidden"></div>
             `;
@@ -197,42 +292,43 @@
                 LIVE
             </span>` : "";
 
+        const handicapText = formatHandicapText(home_team, away_team, handicap);
+
         return `
             <div class="bg-white border border-slate-200 hover:border-sky-300 rounded-2xl p-3 sm:p-4 shadow-sm transition duration-200 mb-3 last:mb-0">
                 <div class="flex items-center justify-between mb-2">
                     <div class="flex items-center gap-2 flex-wrap">
                         ${liveBadge}
-                        <span class="text-xs bg-sky-50 text-sky-700 font-mono font-semibold px-2 py-1 rounded-full border border-sky-100">${timeStr}</span>
-                        <span class="text-xs bg-rose-50 text-rose-700 font-mono font-semibold px-2 py-1 rounded-full border border-rose-100">KT ${endTimeStr}</span>
+                        <span class="match-time-block">⏰ ${timeStr} <span class="match-time-sep">→</span> ${endTimeStr}</span>
                     </div>
                     <button type="button"
                         class="inline-flex items-center gap-1 text-xs bg-white text-slate-600 border border-slate-200 hover:border-sky-300 hover:text-sky-700 px-2.5 py-1 rounded-full transition-colors shadow-sm"
                         onclick="openMatchDetail(${id})"
-                        title="Xem chi tiet tran">
+                        title="Xem chi tiết trận">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M11 16h2M12 8v4m0 8a8 8 0 100-16 8 8 0 000 16z"/>
                         </svg>
-                        <span>Chi tiet</span>
+                        <span>Chi tiết</span>
                     </button>
                 </div>
 
                 <div class="flex items-center justify-between my-3 px-2">
                     <div class="w-2/5 text-center flex flex-col items-center">
                         <div class="flex items-center justify-center mb-1">${homeIconHtml}</div>
-                        <p class="text-sm font-bold text-slate-900 truncate w-full">${homeTeam} ${hcBadge}</p>
-                        <span class="text-xs text-slate-500 block mt-0.5">Chu nha</span>
+                        <p class="text-sm font-bold text-slate-900 truncate w-full">${homeTeam}</p>
+                        <span class="text-xs text-slate-500 block mt-0.5">Chủ nhà</span>
                     </div>
                     <div class="w-1/5 text-center text-slate-400 font-black text-sm">VS</div>
                     <div class="w-2/5 text-center flex flex-col items-center">
                         <div class="flex items-center justify-center mb-1">${awayIconHtml}</div>
                         <p class="text-sm font-bold text-slate-900 truncate w-full">${awayTeam}</p>
-                        <span class="text-xs text-slate-500 block mt-0.5">Khach</span>
+                        <span class="text-xs text-slate-500 block mt-0.5">Khách</span>
                     </div>
                 </div>
 
-                <div class="text-center text-xs text-slate-500 mb-1">
-                    Pool: <span class="text-[#D3af37] font-semibold">${formatCoins(total_pool)}</span>
-                </div>
+                ${handicapText ? `<div class="match-handicap-info">⚖️ ${handicapText}</div>` : ""}
+
+                ${renderPoolBlock(total_pool, stakes_home, stakes_draw, stakes_away, isOddHandicap)}
 
                 ${betArea}
             </div>
@@ -265,7 +361,7 @@
 
         const estEl = document.getElementById(`est-${matchId}`);
         if (estEl) {
-            estEl.innerHTML = `Uoc tinh nhan: <strong>${formatCoins(estimateReward(totalPool, stakesOnChoice, value))}</strong>`;
+            estEl.innerHTML = `Ước tính nhận: <strong>${formatCoins(estimateReward(totalPool, stakesOnChoice, value))}</strong>`;
         }
     };
 
@@ -286,20 +382,62 @@
 
         const maxStake = currentUser ? Number(currentUser.total_points || 0) : 1000;
         const effectiveMin = getEffectiveMinStake(minStake ?? selection.minStake);
-        const quickOptions = buildQuickStakeOptions(minStake, maxStake);
-        const defaultStake = Math.max(effectiveMin, Math.min(quickOptions[0] || effectiveMin, maxStake));
         const defaultTaunt = String(currentUser?.default_taunt || "");
 
         panel.classList.remove("hidden");
         if (maxStake < effectiveMin) {
             panel.innerHTML = `
                 <div class="stake-panel">
-                    <label>So diem dat cuoc</label>
-                    <div class="text-sm text-rose-600 mt-2">Tran nay dang yeu cau toi thieu ${formatCoins(effectiveMin)}. Hien tai ban co ${formatCoins(maxStake)}.</div>
+                    <label>Số điểm đặt cược</label>
+                    <div class="text-sm text-rose-600 mt-2">Trận này yêu cầu tối thiểu ${formatCoins(effectiveMin)}. Hiện bạn có ${formatCoins(maxStake)}.</div>
                 </div>`;
             return;
         }
 
+        const tauntBlock = `
+            <div class="mt-3">
+                <label>Câu gáy cho trận này</label>
+                <textarea
+                    id="taunt-${matchId}"
+                    class="stake-taunt-input mt-2"
+                    rows="2"
+                    maxlength="30"
+                    placeholder="Thêm 1 câu gáy ngắn gọn..."
+                    oninput="updateBetTauntCounter(${matchId})"
+                >${escapeHtml(defaultTaunt)}</textarea>
+                <div class="mt-1 flex items-center justify-end text-xs text-slate-400">
+                    <span id="taunt-count-${matchId}">${defaultTaunt.length}/30</span>
+                </div>
+            </div>`;
+
+        // Khi đã có người đặt: số tiền cố định, không cho chọn lại
+        const isFixedStake = minStake !== null && minStake !== undefined;
+        if (isFixedStake) {
+            const fixedStake = effectiveMin;
+            panel.innerHTML = `
+                <div class="stake-panel">
+                    <div class="fixed-stake-display">
+                        <div class="fixed-stake-label">Số điểm đặt cược (cố định cho trận này)</div>
+                        <div class="fixed-stake-amount">${formatCoins(fixedStake)}</div>
+                        <div class="text-[11px] text-amber-700 mt-1">Mọi người cùng đặt 1 mức để công bằng</div>
+                    </div>
+                    <input type="hidden" id="input-${matchId}" value="${fixedStake}">
+                    ${tauntBlock}
+                    <div class="est-return" id="est-${matchId}">
+                        Ước tính nhận: <strong>${formatCoins(estimateReward(totalPool, stakesOnChoice, fixedStake))}</strong>
+                    </div>
+                    <button class="confirm-bet-btn" id="confirm-btn-${matchId}" onclick="confirmBet(${matchId})">
+                        Xác nhận đặt cược
+                    </button>
+                </div>
+            `;
+            window.updateBetTauntCounter(matchId);
+            return;
+        }
+
+        // Người đầu tiên: tự do chọn số tiền
+        const quickOptions = buildQuickStakeOptions(minStake, maxStake);
+        const defaultStake = Math.max(effectiveMin, Math.min(quickOptions[0] || effectiveMin, maxStake));
         const chips = quickOptions.map(value => `
             <button type="button" class="stake-chip" onclick="pickStake(${matchId}, ${totalPool}, ${stakesOnChoice}, ${value})">
                 ${formatCoins(value)}
@@ -308,10 +446,8 @@
 
         panel.innerHTML = `
             <div class="stake-panel">
-                <label>So diem dat cuoc</label>
-                <div class="mt-2 text-xs text-slate-500">
-                    ${effectiveMin > 1 ? `Toi thieu hien tai: ${formatCoins(effectiveMin)}.` : "Chua co ai dat, ban duoc mo pool tu do."}
-                </div>
+                <label>Số điểm đặt cược</label>
+                <div class="mt-2 text-xs text-slate-500">Bạn là người đầu tiên — số tiền bạn đặt sẽ là mức chung cho trận này.</div>
                 <div class="mt-3 flex flex-wrap gap-2">
                     ${chips}
                 </div>
@@ -321,25 +457,12 @@
                         min="${effectiveMin}" max="${maxStake}" step="1" value="${defaultStake}"
                         oninput="syncStake(${matchId}, ${totalPool}, ${stakesOnChoice}, this.value)">
                 </div>
-                <div class="mt-3">
-                    <label>Cau gay cho tran nay</label>
-                    <textarea
-                        id="taunt-${matchId}"
-                        class="stake-taunt-input mt-2"
-                        rows="2"
-                        maxlength="30"
-                        placeholder="Them 1 cau gay ngan gon..."
-                        oninput="updateBetTauntCounter(${matchId})"
-                    >${escapeHtml(defaultTaunt)}</textarea>
-                    <div class="mt-1 flex items-center justify-end text-xs text-slate-400">
-                        <span id="taunt-count-${matchId}">${defaultTaunt.length}/30</span>
-                    </div>
-                </div>
+                ${tauntBlock}
                 <div class="est-return" id="est-${matchId}">
-                    Uoc tinh nhan: <strong>${formatCoins(estimateReward(totalPool, stakesOnChoice, defaultStake))}</strong>
+                    Ước tính nhận: <strong>${formatCoins(estimateReward(totalPool, stakesOnChoice, defaultStake))}</strong>
                 </div>
                 <button class="confirm-bet-btn" id="confirm-btn-${matchId}" onclick="confirmBet(${matchId})">
-                    Xac nhan dat cuoc
+                    Xác nhận đặt cược
                 </button>
             </div>
         `;
@@ -358,28 +481,28 @@
         const tauntText = String(tauntInput?.value || "").trim();
 
         if (stakeVal < effectiveMin) {
-            showToast(`So diem toi thieu la ${formatCoins(effectiveMin)}.`, "error");
+            showToast(`Số điểm tối thiểu là ${formatCoins(effectiveMin)}.`, "error");
             return;
         }
         if (currentUser && stakeVal > currentUser.total_points) {
-            showToast("So diem khong du.", "error");
+            showToast("Số điểm không đủ.", "error");
             return;
         }
         if (tauntText.length > 30) {
-            showToast("Cau gay toi da 30 ky tu.", "error");
+            showToast("Câu gáy tối đa 30 ký tự.", "error");
             return;
         }
 
         const confirmLines = [
-            `Xac nhan dat ${formatCoins(stakeVal)} cho cua ${choiceLabel(selection.choice)}?`,
+            `Xác nhận đặt ${formatCoins(stakeVal)} cho cửa ${choiceLabel(selection.choice)}?`,
         ];
-        if (tauntText) confirmLines.push(`Cau gay: "${tauntText}"`);
+        if (tauntText) confirmLines.push(`Câu gáy: "${tauntText}"`);
         if (!window.confirm(confirmLines.join("\n"))) return;
 
         const btn = document.getElementById(`confirm-btn-${matchId}`);
         if (!btn) return;
         btn.disabled = true;
-        btn.textContent = "Dang xu ly...";
+        btn.textContent = "Đang xử lý...";
 
         try {
             const res = await fetch("/api/v1/bets", {
@@ -394,15 +517,15 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                showToast(data.detail || "Dat cuoc that bai.", "error");
+                showToast(data.detail || "Đặt cược thất bại.", "error");
                 btn.disabled = false;
-                btn.textContent = "Xac nhan dat cuoc";
+                btn.textContent = "Xác nhận đặt cược";
                 return;
             }
 
             placedBets.add(matchId);
             updateDisplayedPoints(data.remaining_points);
-            showToast(`Dat cuoc thanh cong. Con lai ${formatCoins(data.remaining_points)}.`, "success");
+            showToast(`Đặt cược thành công. Còn lại ${formatCoins(data.remaining_points)}.`, "success");
             matchDetailCache.delete(matchId);
             try {
                 await fetchUpcomingMatches();
@@ -411,9 +534,9 @@
                 console.error(refreshError);
             }
         } catch (error) {
-            showToast("Loi ket noi. Vui long thu lai.", "error");
+            showToast("Lỗi kết nối. Vui lòng thử lại.", "error");
             btn.disabled = false;
-            btn.textContent = "Xac nhan dat cuoc";
+            btn.textContent = "Xác nhận đặt cược";
         }
     };
 })();

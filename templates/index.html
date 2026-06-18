@@ -42,12 +42,16 @@
         </div>
 
         <section class="mt-6 mb-6">
-            <div class="flex items-center justify-between gap-3 mb-3">
-                <h2 class="text-base font-bold uppercase tracking-wide text-slate-500">5 trận đã hoàn tất gần nhất</h2>
-                <span class="text-xs text-slate-400">Thắng thua đã rõ</span>
-            </div>
-            <div id="latest-finished-body" class="rounded-2xl border border-slate-200 bg-white/95 p-3 sm:p-4 shadow-sm">
-                <div class="animate-pulse py-8 text-center text-slate-400 text-sm">Đang tải danh sách trận...</div>
+            <button onclick="toggleFinishedSection()" class="w-full flex items-center justify-between gap-3 mb-3 text-left">
+                <h2 class="text-base font-bold uppercase tracking-wide text-slate-500">📋 5 trận đã hoàn tất</h2>
+                <span id="finished-toggle-btn" class="text-xs text-sky-700 bg-sky-50 px-2.5 py-1 rounded-full border border-sky-200 hover:bg-sky-100 transition-colors flex-shrink-0">
+                    Xem kết quả ▸
+                </span>
+            </button>
+            <div id="finished-section-container" class="hidden">
+                <div id="latest-finished-body" class="space-y-2">
+                    <div class="animate-pulse py-8 text-center text-slate-400 text-sm">Đang tải...</div>
+                </div>
             </div>
         </section>
 
@@ -57,7 +61,7 @@
                 <h2 class="text-base font-bold uppercase tracking-wide text-slate-500">🏆 Bảng Phong Thần</h2>
                 <button onclick="toggleLeaderboard()" id="lb-toggle-btn"
                     class="text-xs text-sky-700 bg-sky-50 px-2.5 py-1 rounded-full border border-sky-200 hover:bg-sky-100 transition-colors">
-                    Thu gá»n
+                    Thu gọn
                 </button>
             </div>
             <div id="leaderboard-container">
@@ -71,7 +75,7 @@
 
         <div class="mb-24 mt-6 flex justify-center">
             <a href="/guide" class="text-sm bg-amber-50 px-4 py-2 rounded-full border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors">
-                HÆ°á»›ng dáº«n nháº­p há»c
+                Hướng dẫn nhập học
             </a>
         </div>
     </main>

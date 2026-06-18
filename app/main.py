@@ -99,7 +99,7 @@ def _normalize_optional_taunt(value: Optional[str]) -> Optional[str]:
     if not text:
         return None
     if len(text) > MAX_TAUNT_LENGTH:
-        raise HTTPException(status_code=400, detail=f"Cau gay toi da {MAX_TAUNT_LENGTH} ky tu.")
+        raise HTTPException(status_code=400, detail=f"Câu gáy tối đa {MAX_TAUNT_LENGTH} ký tự.")
     return text
 
 
@@ -223,10 +223,10 @@ async def notify_admin_recharge_request(request_id: int, user: User, amount: int
         return
     admin_url = f"{APP_BASE_URL}/admin" if APP_BASE_URL else "/admin"
     text = (
-        "Yeu cau nap diem moi\n"
-        f"Ma yeu cau: #{request_id}\n"
+        "Yêu cầu nạp điểm mới\n"
+        f"Mã yêu cầu: #{request_id}\n"
         f"User: {user.email}\n"
-        f"So diem: {amount:,}\n"
+        f"Số điểm: {amount:,}\n"
         f"Trang admin: {admin_url}"
     )
     try:
@@ -805,7 +805,7 @@ async def create_recharge_request(
 
     asyncio.create_task(notify_admin_recharge_request(request.id, user, request.amount))
     return {
-        "message": "Yeu cau nap diem da duoc gui va dang cho admin xac nhan.",
+        "message": "Yêu cầu nạp điểm đã được gửi và đang chờ admin xác nhận.",
         "request": _recharge_request_response(request),
     }
 
@@ -896,7 +896,7 @@ async def place_bet(
     if min_stake is not None and payload.stake < min_stake:
         raise HTTPException(
             status_code=400,
-            detail=f"So diem toi thieu cho tran nay la {_format_coins(min_stake)}.",
+            detail=f"Số điểm tối thiểu cho trận này là {_format_coins(min_stake)}.",
         )
 
     # Validate balance
@@ -1787,9 +1787,9 @@ async def approve_recharge_request(
         await db.execute(select(PointRechargeRequest).where(PointRechargeRequest.id == request_id))
     ).scalars().first()
     if not request:
-        raise HTTPException(status_code=404, detail="Yeu cau nap diem khong ton tai.")
+        raise HTTPException(status_code=404, detail="Yêu cầu nạp điểm không tồn tại.")
     if request.status != PointRechargeStatus.pending:
-        raise HTTPException(status_code=409, detail="Yeu cau nay da duoc xu ly.")
+        raise HTTPException(status_code=409, detail="Yêu cầu này đã được xử lý.")
 
     try:
         approved_at = _local_now_naive()
@@ -1808,7 +1808,7 @@ async def approve_recharge_request(
         )
         if status_update.rowcount != 1:
             await db.rollback()
-            raise HTTPException(status_code=409, detail="Yeu cau nay da duoc xu ly.")
+            raise HTTPException(status_code=409, detail="Yêu cầu này đã được xử lý.")
 
         await db.execute(
             update(User)
@@ -1830,7 +1830,7 @@ async def approve_recharge_request(
     if user:
         await db.refresh(user)
     return {
-        "message": "Da xac nhan va cong diem cho user.",
+        "message": "Đã xác nhận và cộng điểm cho user.",
         "request": _recharge_request_response(request, user, admin_user),
     }
 
@@ -2235,18 +2235,22 @@ async def place_bet_v2(
         await db.execute(select(Match).where(Match.id == payload.match_id))
     ).scalars().first()
     if not match:
-        raise HTTPException(status_code=404, detail="Tran dau khong ton tai.")
+        raise HTTPException(status_code=404, detail="Trận đấu không tồn tại.")
     if match.status != MatchStatus.upcoming:
-        raise HTTPException(status_code=400, detail="Tran nay da khoa dat cuoc.")
+        raise HTTPException(status_code=400, detail="Trận này đã khóa đặt cược.")
+
+    # Kèo chấp lẻ (0.5, 1.5, ...) không có kết quả hòa
+    if payload.choice == "DRAW" and match.handicap % 1 != 0:
+        raise HTTPException(status_code=400, detail="Kèo chấp lẻ không có cửa hòa.")
 
     min_stake = await _get_match_min_stake(db, payload.match_id)
     if min_stake is not None and payload.stake < min_stake:
         raise HTTPException(
             status_code=400,
-            detail=f"So diem toi thieu cho tran nay la {_format_coins(min_stake)}.",
+            detail=f"Số điểm tối thiểu cho trận này là {_format_coins(min_stake)}.",
         )
     if user.total_points < payload.stake:
-        raise HTTPException(status_code=400, detail="So diem khong du.")
+        raise HTTPException(status_code=400, detail="Số điểm không đủ.")
 
     taunt_text = _normalize_optional_taunt(payload.taunt_text)
 
@@ -2256,7 +2260,7 @@ async def place_bet_v2(
         )
     ).scalars().first()
     if existing:
-        raise HTTPException(status_code=409, detail="Ban da dat cuoc tran nay roi.")
+        raise HTTPException(status_code=409, detail="Bạn đã đặt cược trận này rồi.")
 
     try:
         balance_update = await db.execute(
@@ -2267,7 +2271,7 @@ async def place_bet_v2(
         )
         if balance_update.rowcount != 1:
             await db.rollback()
-            raise HTTPException(status_code=400, detail="So diem khong du.")
+            raise HTTPException(status_code=400, detail="Số điểm không đủ.")
 
         bet = Bet(
             user_id=user.id,
@@ -2281,7 +2285,7 @@ async def place_bet_v2(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Ban da dat cuoc tran nay roi.")
+        raise HTTPException(status_code=409, detail="Bạn đã đặt cược trận này rồi.")
     except HTTPException:
         raise
     except Exception as exc:
@@ -2290,7 +2294,7 @@ async def place_bet_v2(
 
     await db.refresh(user)
     return {
-        "message": "Dat cuoc thanh cong.",
+        "message": "Đặt cược thành công.",
         "remaining_points": user.total_points,
         "min_stake": min_stake,
         "taunt_text": taunt_text,

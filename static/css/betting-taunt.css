@@ -53,6 +53,47 @@
     50% { transform: scale(1.1); opacity: 1; }
 }
 
+.match-time-block {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    font-family: monospace;
+    font-weight: 700;
+    color: #0369a1;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 999px;
+    padding: 4px 10px;
+    white-space: nowrap;
+}
+
+.match-time-sep {
+    color: #94a3b8;
+    font-weight: 400;
+}
+
+.match-handicap-info {
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    margin-bottom: 8px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #eff6ff 0%, #dbeafe 50%, #eff6ff 100%);
+    border: 1px solid #93c5fd;
+    color: #1e40af;
+    display: inline-block;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.match-handicap-info strong {
+    color: #1e3a8a;
+    font-weight: 900;
+}
+
 .taunt-slot {
     width: 100%;
     min-width: 0;
@@ -61,25 +102,71 @@
 }
 
 .taunt-slot.has-taunt {
-    min-height: 62px;
+    min-height: 68px;
     margin-bottom: 2px;
 }
 
-.taunt-bubble {
-    min-height: 56px;
-    height: auto;
+.taunt-chat-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
     width: 100%;
-    border-radius: 16px;
+}
+
+.taunt-avatar-mini {
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    border-radius: 50%;
+    border: 1.5px solid #bfd8eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55rem;
+    font-weight: 800;
+    color: #fff;
+    overflow: hidden;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.taunt-bubble {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 52px;
+    height: auto;
+    border-radius: 14px 14px 14px 4px;
     border: 1px solid #c5dbeb;
     background:
         radial-gradient(circle at top left, rgba(202, 227, 245, 0.85), transparent 42%),
-        linear-gradient(180deg, #f8fcff 0%, #edf6fc 100%);
+        linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 100%);
     padding: 7px 9px;
     text-align: left;
-    box-shadow: 0 10px 24px rgba(116, 155, 190, 0.16);
+    box-shadow: 0 6px 18px rgba(116, 155, 190, 0.14);
     display: grid;
     grid-template-rows: auto 1fr;
     gap: 3px;
+}
+
+.taunt-bubble::before {
+    content: '';
+    position: absolute;
+    left: -7px;
+    top: 9px;
+    border-style: solid;
+    border-width: 5px 7px 5px 0;
+    border-color: transparent #c5dbeb transparent transparent;
+}
+
+.taunt-bubble::after {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 9px;
+    border-style: solid;
+    border-width: 5px 6px 5px 0;
+    border-color: transparent #eef8ff transparent transparent;
 }
 
 .taunt-name {
@@ -137,6 +224,150 @@
     border-color: #0ea5e9;
 }
 
+/* ─── Pool Block ─────────────────────────────────────────────────────────── */
+.pool-block {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef9c3 100%);
+    border: 1px solid #fde68a;
+    border-radius: 14px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+}
+
+.pool-block-empty {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+}
+
+.pool-empty-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.pool-empty-text {
+    font-size: 0.72rem;
+    color: #64748b;
+    font-weight: 600;
+    font-style: italic;
+}
+
+.pool-total-row {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    margin-bottom: 8px;
+}
+
+.pool-total-icon {
+    font-size: 0.9rem;
+}
+
+.pool-total-amount {
+    font-size: 1.15rem;
+    font-weight: 900;
+    color: #b45309;
+    letter-spacing: -0.02em;
+}
+
+.pool-total-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #92400e;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.pool-bar {
+    display: flex;
+    height: 7px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: #e2e8f0;
+    margin-bottom: 8px;
+    gap: 2px;
+}
+
+.pool-bar-seg {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.4s ease;
+    min-width: 4px;
+}
+
+.pool-bar-home { background: #10b981; }
+.pool-bar-draw { background: #94a3b8; }
+.pool-bar-away { background: #f43f5e; }
+
+.pool-breakdown {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+}
+
+.pool-breakdown-2col {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.pool-side {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 4px 2px;
+    border-radius: 8px;
+}
+
+.pool-side-home { background: rgba(16, 185, 129, 0.08); }
+.pool-side-draw { background: rgba(148, 163, 184, 0.1); }
+.pool-side-away { background: rgba(244, 63, 94, 0.08); }
+
+.pool-side-label {
+    font-size: 0.58rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.pool-side-home .pool-side-label { color: #059669; }
+.pool-side-draw .pool-side-label { color: #64748b; }
+.pool-side-away .pool-side-label { color: #e11d48; }
+
+.pool-side-pct {
+    font-size: 0.82rem;
+    font-weight: 900;
+    color: #0f172a;
+}
+
+.pool-side-amt {
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.fixed-stake-display {
+    background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%);
+    border: 1.5px solid #fde68a;
+    border-radius: 12px;
+    padding: 12px 16px;
+    text-align: center;
+}
+
+.fixed-stake-label {
+    font-size: 0.72rem;
+    color: #92400e;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.fixed-stake-amount {
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: #b45309;
+    letter-spacing: -0.02em;
+}
+
 @media (max-width: 480px) {
     .bet-btn-group {
         gap: 6px;
@@ -154,13 +385,19 @@
     }
 
     .taunt-slot.has-taunt {
-        min-height: 58px;
+        min-height: 62px;
     }
 
     .taunt-bubble {
-        min-height: 52px;
+        min-height: 48px;
         padding: 6px 8px;
-        border-radius: 14px;
+    }
+
+    .taunt-avatar-mini {
+        width: 22px;
+        height: 22px;
+        min-width: 22px;
+        font-size: 0.5rem;
     }
 
     .taunt-name {
@@ -175,5 +412,10 @@
     .stake-chip {
         font-size: 0.78rem;
         padding: 6px 10px;
+    }
+
+    .match-time-block {
+        font-size: 0.66rem;
+        padding: 3px 8px;
     }
 }

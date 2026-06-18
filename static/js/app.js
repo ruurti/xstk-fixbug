@@ -2,6 +2,8 @@
 let currentUser = null;          // { email, total_points }
 let placedBets = new Set();      // match IDs đã cược trong session này
 let matchDetailCache = new Map();
+let finishedSectionLoaded = false;
+let finishedSectionRefreshTimer = null;
 const NO_CACHE_FETCH_OPTIONS = { cache: "no-store" };
 const MIN_STAKE = 10;
 const QUICK_STAKE_OPTIONS = [100, 200, 500, 1000];
@@ -129,7 +131,6 @@ function getQuoteByDetail(detail) {
 document.addEventListener("DOMContentLoaded", () => {
     fetchUserProfile();
     fetchUpcomingMatches();
-    fetchLatestFinishedMatch();
     startTicker();
     fetchLeaderboard();
     document.getElementById("match-detail-modal")?.addEventListener("click", e => {
@@ -140,7 +141,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     // Refresh pool odds mỗi 30 giây
     setInterval(fetchUpcomingMatches, 30_000);
-    setInterval(fetchLatestFinishedMatch, 30_000);
     // Refresh ticker mỗi 60 giây
     setInterval(startTicker, 60_000);
 });
@@ -324,57 +324,113 @@ function renderLatestFinishedMatch(detail) {
     const match = detail.match || {};
     const settlement = detail.settlement || {};
     const pool = detail.pool || {};
+    const myBet = detail.my_bet;
+
     const isPublished = Boolean(settlement.result_published);
     const totalPool = Number(pool.total_pool || 0);
-    const winnerText = !isPublished
-        ? "Chờ kết quả"
-        : settlement.refunded
-        ? "Hoàn điểm"
-        : choiceLabel(settlement.winning_choice);
-    const scoreText = isPublished ? (settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`) : "Chờ kết quả";
-    const adjustedText = isPublished && settlement.adjusted_score ? `Sau kèo ${settlement.adjusted_score}` : "Đang chờ công bố";
     const winnerCount = Number(settlement.winner_count || 0);
     const loserCount = Number(settlement.loser_count || 0);
     const refundCount = Number(settlement.refund_count || 0);
+    const winnerText = !isPublished ? "Chờ kết quả"
+        : settlement.refunded ? "Hoàn điểm"
+        : choiceLabel(settlement.winning_choice);
+    const scoreText = isPublished
+        ? (settlement.score || `${match.home_score ?? 0}-${match.away_score ?? 0}`)
+        : "?-?";
+
+    const cardId = `finished-card-${match.id}`;
+
+    // Badge + border + detail block based on user outcome
+    let outcomeBadge, cardBorderClass, myResultBlock;
+    if (!myBet) {
+        outcomeBadge = `<span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-400">Không cược</span>`;
+        cardBorderClass = "border-slate-200";
+        myResultBlock = `<p class="text-xs text-slate-400 italic">Bạn chưa tham gia trận này.</p>`;
+    } else if (!isPublished) {
+        outcomeBadge = `<span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-500">⏳ Chờ kết quả</span>`;
+        cardBorderClass = "border-slate-200";
+        myResultBlock = `<p class="text-xs text-slate-500">Cửa: <strong>${escapeHtml(choiceLabel(myBet.choice))}</strong> · Đặt ${formatCoins(myBet.stake)} · Chờ công bố</p>`;
+    } else if (myBet.outcome === "WIN") {
+        outcomeBadge = `<span class="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">🏆 Thắng +${formatCoins(myBet.points_earned)}</span>`;
+        cardBorderClass = "border-emerald-300";
+        myResultBlock = `<p class="text-xs text-emerald-700">Cửa: <strong>${escapeHtml(choiceLabel(myBet.choice))}</strong> · Đặt ${formatCoins(myBet.stake)} · Nhận về <strong>+${formatCoins(myBet.points_earned)}</strong></p>`;
+    } else if (myBet.outcome === "LOSE") {
+        outcomeBadge = `<span class="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-600">💸 Thua</span>`;
+        cardBorderClass = "border-rose-200";
+        myResultBlock = `<p class="text-xs text-rose-600">Cửa: <strong>${escapeHtml(choiceLabel(myBet.choice))}</strong> · Đặt ${formatCoins(myBet.stake)} · Mất trắng</p>`;
+    } else if (myBet.outcome === "REFUND") {
+        outcomeBadge = `<span class="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">🔄 Hoàn điểm</span>`;
+        cardBorderClass = "border-amber-200";
+        myResultBlock = `<p class="text-xs text-amber-700">Cửa: <strong>${escapeHtml(choiceLabel(myBet.choice))}</strong> · Đặt ${formatCoins(myBet.stake)} · Hoàn lại ${formatCoins(myBet.stake)}</p>`;
+    } else {
+        outcomeBadge = `<span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-400">─</span>`;
+        cardBorderClass = "border-slate-200";
+        myResultBlock = "";
+    }
+
+    const myResultBg = myBet?.outcome === "WIN" ? "bg-emerald-50 border-emerald-100"
+        : myBet?.outcome === "LOSE" ? "bg-rose-50 border-rose-100"
+        : myBet?.outcome === "REFUND" ? "bg-amber-50 border-amber-100"
+        : "bg-slate-50 border-slate-100";
+
+    const quote = settlement.headline_quote || getQuoteByDetail(detail);
 
     return `
-        <div class="space-y-4">
-            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div class="min-w-0">
-                    <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">${isPublished ? "Trận đã hoàn tất gần nhất" : "Trận chờ kết quả gần nhất"}</div>
-                    <div class="mt-1 text-lg font-black text-slate-900 truncate">${escapeHtml(match.home_team || "Trận đấu")} vs ${escapeHtml(match.away_team || "")}</div>
-                    <div class="mt-1 text-sm text-slate-500">${escapeHtml(scoreText)} · ${escapeHtml(adjustedText)} · ${formatVNDateTime(match.start_time)}</div>
+        <div class="rounded-xl border ${cardBorderClass} bg-white shadow-sm overflow-hidden">
+            <button class="w-full flex items-start justify-between gap-3 p-3 sm:p-4 text-left hover:bg-slate-50 active:bg-slate-100 transition-colors"
+                onclick="toggleFinishedCard('${cardId}')">
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-1.5 mb-1">
+                        ${outcomeBadge}
+                        ${isPublished && !settlement.refunded ? `<span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">Cửa thắng: ${escapeHtml(winnerText)}</span>` : ""}
+                    </div>
+                    <div class="text-sm font-bold text-slate-900 truncate">
+                        ${escapeHtml(match.home_team || "?")}
+                        <span class="font-normal text-slate-400 mx-1">${isPublished ? escapeHtml(scoreText) : "vs"}</span>
+                        ${escapeHtml(match.away_team || "?")}
+                    </div>
+                    <div class="mt-0.5 text-[11px] text-slate-400">${formatVNDateTime(match.start_time)} · Kèo chấp ${match.handicap ?? 0}</div>
                 </div>
-            <div class="flex items-center gap-2 flex-wrap justify-end">
-                <span class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${!isPublished ? "border-slate-200 bg-slate-50 text-slate-600" : settlement.refunded ? "border-amber-200 bg-amber-50 text-amber-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}">
-                    ${escapeHtml(!isPublished ? "Chờ kết quả" : settlement.refunded ? "Hoàn điểm" : `Cửa thắng: ${winnerText}`)}
-                </span>
-                    <button type="button" onclick="openMatchDetail(${match.id}, true)" class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition-colors">
-                        🔎Chi tiết
-                    </button>
-                </div>
-            </div>
+                <svg id="${cardId}-icon" class="w-4 h-4 mt-1 text-slate-400 transition-transform duration-200 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+            </button>
 
-            ${isPublished ? `
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    ${summaryTile("Tổng quỹ", formatCoins(totalPool), "text-[#D3af37]")}
-                    ${summaryTile("Người thắng", String(winnerCount), "text-emerald-600")}
-                    ${summaryTile("Người thua", String(loserCount), "text-rose-600")}
-                    ${summaryTile(settlement.refunded ? "Hoàn điểm" : "Cửa thắng", settlement.refunded ? String(refundCount) : winnerText, "text-[#D3af37]")}
+            <div id="${cardId}" class="hidden border-t border-slate-100 p-3 sm:p-4 space-y-3">
+                <div class="rounded-lg border ${myResultBg} px-3 py-2">
+                    <div class="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Kết quả của bạn</div>
+                    ${myResultBlock}
                 </div>
-            ` : `
-                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                    Trận đã kết thúc theo lịch và đang chờ công bố kết quả chính thức.
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    ${summaryTile("Tổng quỹ", formatCoins(totalPool), "text-[#D3af37]")}
-                    ${summaryTile("Trạng thái", "Chờ kết quả", "text-slate-600")}
-                </div>
-            `}
 
-            <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <div class="text-[11px] uppercase tracking-wide text-amber-700">Ý kiến của chuyên gia</div>
-                <div class="mt-2 text-sm leading-relaxed text-amber-900 italic">${escapeHtml(settlement.headline_quote || getQuoteByDetail(detail))}</div>
+                ${isPublished ? `
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        ${summaryTile("Tổng quỹ", formatCoins(totalPool), "text-[#D3af37]")}
+                        ${summaryTile("Người thắng", String(winnerCount), "text-emerald-600")}
+                        ${summaryTile("Người thua", String(loserCount), "text-rose-600")}
+                        ${summaryTile(settlement.refunded ? "Hoàn tiền" : "Cửa thắng", settlement.refunded ? String(refundCount) : escapeHtml(winnerText), "text-[#D3af37]")}
+                    </div>
+                    ${settlement.adjusted_score ? `<div class="text-[11px] text-slate-400">Tỷ số: <strong class="text-slate-600">${escapeHtml(scoreText)}</strong> · Sau kèo: <strong class="text-slate-600">${escapeHtml(settlement.adjusted_score)}</strong></div>` : ""}
+                ` : `
+                    <div class="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                        Trận đã kết thúc theo lịch, đang chờ công bố kết quả chính thức.
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        ${summaryTile("Tổng quỹ", formatCoins(totalPool), "text-[#D3af37]")}
+                        ${summaryTile("Trạng thái", "Chờ công bố", "text-slate-500")}
+                    </div>
+                `}
+
+                ${quote ? `
+                    <div class="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                        <div class="text-[10px] uppercase tracking-wide text-amber-700 mb-1">Chuyên gia nhận định</div>
+                        <div class="text-xs italic leading-relaxed text-amber-900">${escapeHtml(quote)}</div>
+                    </div>
+                ` : ""}
+
+                <button type="button" onclick="openMatchDetail(${match.id}, true)"
+                    class="w-full rounded-lg border border-sky-200 bg-sky-50 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition-colors">
+                    🔎 Xem toàn bộ chi tiết
+                </button>
             </div>
         </div>`;
 }
@@ -383,7 +439,7 @@ function renderLatestFinishedMatches(details) {
     if (!details.length) {
         return `<div class="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">Chưa có trận nào hoàn tất.</div>`;
     }
-    return `<div class="space-y-4">${details.map(renderLatestFinishedMatch).join("")}</div>`;
+    return details.map(renderLatestFinishedMatch).join("");
 }
 
 
@@ -440,6 +496,7 @@ function renderMatchDetail(detail) {
     const myBet = detail.my_bet;
     const totalPool = Number(pool.total_pool || 0);
     const resultPublished = Boolean(settlement.result_published);
+    const isOddHandicap = (match.handicap ?? 0) % 1 !== 0;
     const choiceStats = [
         { key: "HOME", stake: Number(pool.home_stakes || 0), count: Number(pool.home_count || 0), bettors: bettors.HOME || [] },
         { key: "DRAW", stake: Number(pool.draw_stakes || 0), count: Number(pool.draw_count || 0), bettors: bettors.DRAW || [] },
@@ -458,11 +515,14 @@ function renderMatchDetail(detail) {
     const drawPct = totalPool > 0 ? (choiceStats[1].stake / totalPool) * 100 : 0;
     const awayPct = totalPool > 0 ? (choiceStats[2].stake / totalPool) * 100 : 0;
 
+    const summaryGridCols = isOddHandicap ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2 md:grid-cols-4";
+    const choiceGridCols = isOddHandicap ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 md:grid-cols-3";
+
     body.innerHTML = `
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="grid ${summaryGridCols} gap-3">
             ${summaryTile("Tổng quỹ", formatCoins(totalPool), "text-[#D3af37]")}
             ${summaryTile("Chủ nhà", formatCoins(choiceStats[0].stake), "text-[#D3af37]")}
-            ${summaryTile("Hòa", formatCoins(choiceStats[1].stake), "text-[#D3af37]")}
+            ${!isOddHandicap ? summaryTile("Hòa", formatCoins(choiceStats[1].stake), "text-[#D3af37]") : ""}
             ${summaryTile("Khách", formatCoins(choiceStats[2].stake), "text-[#D3af37]")}
         </div>
 
@@ -479,9 +539,9 @@ function renderMatchDetail(detail) {
             </div>
         ` : ""}
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="grid ${choiceGridCols} gap-3">
             ${renderChoiceColumn(choiceStats[0], homePct, settlement)}
-            ${renderChoiceColumn(choiceStats[1], drawPct, settlement)}
+            ${!isOddHandicap ? renderChoiceColumn(choiceStats[1], drawPct, settlement) : ""}
             ${renderChoiceColumn(choiceStats[2], awayPct, settlement)}
         </div>
 
@@ -622,6 +682,34 @@ window.toggleGroup = function(dateKey) {
     const icon = document.getElementById(`icon-${dateKey}`);
     content.classList.toggle("hidden");
     icon.classList.toggle("rotate-180");
+};
+
+window.toggleFinishedSection = function() {
+    const container = document.getElementById("finished-section-container");
+    const btn = document.getElementById("finished-toggle-btn");
+    if (!container) return;
+    const isNowHidden = container.classList.toggle("hidden");
+    if (isNowHidden) {
+        if (btn) btn.textContent = "Xem kết quả ▸";
+        clearInterval(finishedSectionRefreshTimer);
+        finishedSectionRefreshTimer = null;
+    } else {
+        if (btn) btn.textContent = "Thu gọn ▾";
+        if (!finishedSectionLoaded) {
+            fetchLatestFinishedMatch();
+            finishedSectionLoaded = true;
+        }
+        clearInterval(finishedSectionRefreshTimer);
+        finishedSectionRefreshTimer = setInterval(fetchLatestFinishedMatch, 30_000);
+    }
+};
+
+window.toggleFinishedCard = function(cardId) {
+    const body = document.getElementById(cardId);
+    const icon = document.getElementById(`${cardId}-icon`);
+    if (!body) return;
+    body.classList.toggle("hidden");
+    icon?.classList.toggle("rotate-180");
 };
 
 
@@ -774,14 +862,16 @@ function renderMatchCard(match) {
     const homeIconSrc = safeImageSrc(home_icon);
     const awayIconSrc = safeImageSrc(away_icon);
     const minStake = match.min_stake;
-    const minStakeHint = minStake ? `Toi thieu ${formatCoins(minStake)}` : "Mở bát tự do";
+    const minStakeHint = minStake ? `Tối thiểu ${formatCoins(minStake)}` : "Mở bát tự do";
 
     const hcSign = handicap > 0 ? "+" : "";
     const hcClass = handicap >= 0 ? "handicap-pos" : "handicap-neg";
     const hcBadge = handicap !== 0 ? `<span class="${hcClass}">(${hcSign}${handicap})</span>` : "";
+    // Kèo chấp lẻ (0.5, 1.5, ...) không có kết quả hòa
+    const isOddHandicap = handicap % 1 !== 0;
 
     const betArea = placedBets.has(id)
-        ? `<div class="bet-placed-badge">Da dat cuoc cho tran nay</div>`
+        ? `<div class="bet-placed-badge">Đã đặt cược cho trận này</div>`
         : canBet
         ? `
             <div class="bet-btn-group" id="btn-group-${id}">
@@ -791,12 +881,13 @@ function renderMatchCard(match) {
                     </button>
                     <div class="avatar-stack-row" id="avatars-home-${id}"></div>
                 </div>
+                ${!isOddHandicap ? `
                 <div class="bet-choice-block">
                     <button class="bet-btn w-full" id="bet-draw-${id}" onclick="selectChoice(${id}, 'DRAW', ${total_pool}, ${stakes_draw}, '${status}', ${minStake ?? "null"})">
                         <span class="bet-label">HÒA</span>
                     </button>
                     <div class="avatar-stack-row" id="avatars-draw-${id}"></div>
-                </div>
+                </div>` : ""}
                 <div class="bet-choice-block">
                     <button class="bet-btn w-full" id="bet-away-${id}" onclick="selectChoice(${id}, 'AWAY', ${total_pool}, ${stakes_away}, '${status}', ${minStake ?? "null"})">
                         <span class="bet-label">KHÁCH</span>
@@ -812,10 +903,11 @@ function renderMatchCard(match) {
                     <div class="px-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">NHÀ</div>
                     <div class="avatar-stack-row" id="avatars-home-${id}"></div>
                 </div>
+                ${!isOddHandicap ? `
                 <div class="bet-choice-block">
                     <div class="px-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">HÒA</div>
                     <div class="avatar-stack-row" id="avatars-draw-${id}"></div>
-                </div>
+                </div>` : ""}
                 <div class="bet-choice-block">
                     <div class="px-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">KHÁCH</div>
                     <div class="avatar-stack-row" id="avatars-away-${id}"></div>
@@ -842,7 +934,7 @@ function renderMatchCard(match) {
                 <button type="button"
                     class="inline-flex items-center gap-1 text-xs bg-white text-slate-600 border border-slate-200 hover:border-sky-300 hover:text-sky-700 px-2.5 py-1 rounded-full transition-colors shadow-sm"
                     onclick="openMatchDetail(${id})"
-                    title="Xem chi tiet tran">
+                    title="Xem chi tiết trận">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M11 16h2M12 8v4m0 8a8 8 0 100-16 8 8 0 000 16z"/>
                     </svg>
@@ -898,8 +990,8 @@ function renderStakePanel(matchId, choice, totalPool, stakesOnChoice, minStake =
     if (maxStake < effectiveMin) {
         panel.innerHTML = `
             <div class="stake-panel">
-                <label>So diem dat cuoc</label>
-                <div class="text-sm text-rose-600 mt-2">Tran nay dang yeu cau toi thieu ${formatCoins(effectiveMin)}. Hien tai ban co ${formatCoins(maxStake)}.</div>
+                <label>Số điểm đặt cược</label>
+                <div class="text-sm text-rose-600 mt-2">Trận này đang yêu cầu tối thiểu ${formatCoins(effectiveMin)}. Hiện tại bạn có ${formatCoins(maxStake)}.</div>
             </div>`;
         return;
     }
@@ -914,9 +1006,9 @@ function renderStakePanel(matchId, choice, totalPool, stakesOnChoice, minStake =
 
     panel.innerHTML = `
         <div class="stake-panel">
-            <label>So diem dat cuoc</label>
+            <label>Số điểm đặt cược</label>
             <div class="mt-2 text-xs text-slate-500">
-                ${effectiveMin > 1 ? `Toi thieu hien tai: ${formatCoins(effectiveMin)}.` : "Chưa ai lên thuyền. Bạn có thể mở bát tự do."}
+                ${effectiveMin > 1 ? `Tối thiểu hiện tại: ${formatCoins(effectiveMin)}.` : "Chưa ai lên thuyền. Bạn có thể mở bát tự do."}
             </div>
             <div class="mt-3 flex flex-wrap gap-2">
                 ${chips}
