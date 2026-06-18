@@ -2,6 +2,12 @@
 
 Dự án học tập xây dựng hệ thống backend tính điểm dự đoán tỉ số bóng đá theo thời gian thực (Real-time). Hệ thống sử dụng mô hình kiến trúc Zero Trust, ủy quyền toàn bộ việc định danh người dùng cho Cloudflare Access và lưu trữ dữ liệu gọn nhẹ bằng SQLite.
 
+## ⚠️ Miễn trừ trách nhiệm
+
+Dự án này được xây dựng cho mục đích học tập, thử nghiệm kỹ thuật và minh họa cách triển khai một hệ thống dự đoán/tính điểm theo thời gian thực. Ứng dụng không nhằm khuyến khích, tổ chức hoặc hỗ trợ cá cược bằng tiền thật hay bất kỳ hoạt động cờ bạc trái pháp luật nào.
+
+Người sử dụng, triển khai hoặc tùy biến mã nguồn này tự chịu trách nhiệm bảo đảm việc sử dụng phù hợp với pháp luật, quy định địa phương và chính sách của nền tảng liên quan. Tác giả không chịu trách nhiệm cho mọi thiệt hại, tranh chấp hoặc hệ quả phát sinh từ việc sử dụng dự án sai mục đích.
+
 ## 🛠 Tech Stack
 
 * **Backend Framework:** FastAPI (Python)
